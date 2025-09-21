@@ -1,13 +1,51 @@
 {
   "manifest_version": 3,
   "version": "1.0.0",
-  "name": "Chrome Extension Template",
+  "name": "ReadBuddy - AI Reading Assistant",
+  "description": "Smart AI assistant for reading, translating, and understanding web content with local processing",
   "action": {
-    "default_popup": "index.html"
+    "default_popup": "popup.html",
+    "default_title": "ReadBuddy"
   },
   "side_panel": {
-    "default_path": "index.html"
+    "default_path": "sidepanel.html"
   },
-  "permissions": ["scripting", "tabs", "sidePanel", "commands", "contextMenus"],
-  "host_permissions": ["http://*/*", "https://*/*"]
+  "permissions": [
+    "scripting",
+    "storage",
+    "tabs", 
+    "sidePanel",
+    "commands",
+    "contextMenus",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://*/*", 
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["settings.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "commands": {
+    "toggle-sidepanel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+R",
+        "mac": "Command+Shift+R"
+      },
+      "description": "Toggle ReadBuddy side panel"
+    }
+  }
 }
