@@ -24,3 +24,8 @@ chrome.commands.onCommand.addListener((command) => {
 chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({tabId: tab.id});
 });
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  console.log("Background got message:", msg);
+});
+

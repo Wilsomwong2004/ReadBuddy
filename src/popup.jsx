@@ -128,5 +128,4 @@ const Popup = () => {
   );
 };
 
-// Mount popup
 ReactDOM.createRoot(document.getElementById('root')).render(<Popup />)
