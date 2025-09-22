@@ -491,22 +491,9 @@ const SidePanel = () => {
         </div>
       )}
 
-      {/* Header */}
-      <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center text-white transform hover:scale-110 transition-transform duration-200">
-            📚
-          </div>
-          <div>
-            <h2 className="font-semibold text-gray-900">ReadBuddy</h2>
-            <p className="text-xs text-gray-500">AI Reading Assistant</p>
-          </div>
-        </div>
-      </div>
-
       {/* Animated Tabs */}
       <div className="p-4 border-b">
-        <div className="relative grid grid-cols-3 gap-1 bg-gray-100 rounded-lg p-1">
+        <div className="relative grid grid-cols-3 gap-1 bg-gray-200 rounded-lg p-1">
           {/* Animated Background */}
           <div 
             className="absolute top-1 bottom-1 bg-white rounded-md shadow-sm transition-all duration-300 ease-out"
