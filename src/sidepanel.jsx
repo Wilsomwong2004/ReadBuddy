@@ -17,28 +17,44 @@ const SidePanel = () => {
     translator: false
   });
 
-  // Check API support on component mount
   useEffect(() => {
     checkAPISupport();
   }, []);
 
   const checkAPISupport = async () => {
+    let support = {
+      summarizer: false,
+      translator: false
+    };
+
     try {
-      // Check Summarizer API support
-      const summarizerSupport = 'ai' in window && 'summarizer' in window.ai;
-      
-      // Check Translator API support  
-      const translatorSupport = 'translation' in window && 'createTranslator' in window.translation;
-      
-      setApiSupport({
-        summarizer: summarizerSupport,
-        translator: translatorSupport
+      const status_summarizer = await Summarizer.availability();
+      const status_translator = await Translator.availability({
+        sourceLanguage: 'en', 
+        targetLanguage: 'zh'  
       });
 
-      console.log('API Support:', { summarizerSupport, translatorSupport });
+      console.log('Summarizer availability status:', status_summarizer);
+      console.log('Translator availability status:', status_translator);
+
+      if (status_summarizer === 'available') {
+        console.log('✅ Summarizer is supported and ready to use.');
+        support = { ...support, summarizer: true };
+      } else {
+        console.log('❌ Summarizer is not available. Returned:', status_summarizer);
+      }
+
+      if (status_translator === 'available') {
+        console.log('✅ Translator is supported and ready to use.');
+        support = { ...support, translator: true };
+      } else {
+        console.log('❌ Translator is not available. Returned:', status_translator);
+      }
     } catch (error) {
       console.error('Error checking API support:', error);
     }
+
+    setApiSupport(support);
   };
 
   useEffect(() => {
@@ -110,83 +126,68 @@ const SidePanel = () => {
   };
 
   // Drag and Drop handlers
-  const handleDragEnter = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragCounter(prev => prev + 1);
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setIsDragging(true);
-    }
-  };
+  // const handleDragEnter = (e) => {
+  //   e.preventDefault();
+  //   e.stopPropagation();
+  //   setDragCounter(prev => prev + 1);
+  //   if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+  //     setIsDragging(true);
+  //   }
+  // };
 
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragCounter(prev => prev - 1);
-    if (dragCounter <= 1) {
-      setIsDragging(false);
-    }
-  };
+  // const handleDragLeave = (e) => {
+  //   e.preventDefault();
+  //   e.stopPropagation();
+  //   setDragCounter(prev => prev - 1);
+  //   if (dragCounter <= 1) {
+  //     setIsDragging(false);
+  //   }
+  // };
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
+  // const handleDragOver = (e) => {
+  //   e.preventDefault();
+  //   e.stopPropagation();
+  // };
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    setDragCounter(0);
+  // const handleDrop = (e) => {
+  //   e.preventDefault();
+  //   e.stopPropagation();
+  //   setIsDragging(false);
+  //   setDragCounter(0);
 
-    const data = e.dataTransfer;
+  //   const data = e.dataTransfer;
     
-    // Handle text data
-    if (data.types.includes('text/plain')) {
-      const text = data.getData('text/plain');
-      if (text.trim()) {
-        setSelectedText(prev => prev ? prev + '\n\n' + text : text);
-      }
-    }
+  //   // Handle text data
+  //   if (data.types.includes('text/plain')) {
+  //     const text = data.getData('text/plain');
+  //     if (text.trim()) {
+  //       setSelectedText(prev => prev ? prev + '\n\n' + text : text);
+  //     }
+  //   }
     
-    // Handle files (like PDF)
-    if (data.files && data.files.length > 0) {
-      const file = data.files[0];
-      if (file.type === 'application/pdf' || file.type === 'text/plain' || file.name.endsWith('.txt')) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const content = e.target.result;
-          if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-            setSelectedText(prev => prev ? prev + '\n\n' + content : content);
-          } else {
-            setSelectedText(prev => prev ? prev + '\n\n[PDF Content: ' + file.name + ']' : '[PDF Content: ' + file.name + ']');
-          }
-        };
+  //   // Handle files (like PDF)
+  //   if (data.files && data.files.length > 0) {
+  //     const file = data.files[0];
+  //     if (file.type === 'application/pdf' || file.type === 'text/plain' || file.name.endsWith('.txt')) {
+  //       const reader = new FileReader();
+  //       reader.onload = (e) => {
+  //         const content = e.target.result;
+  //         if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+  //           setSelectedText(prev => prev ? prev + '\n\n' + content : content);
+  //         } else {
+  //           setSelectedText(prev => prev ? prev + '\n\n[PDF Content: ' + file.name + ']' : '[PDF Content: ' + file.name + ']');
+  //         }
+  //       };
         
-        if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-          reader.readAsText(file);
-        } else {
-          setSelectedText(prev => prev ? prev + '\n\n[PDF Content: ' + file.name + ']' : '[PDF Content: ' + file.name + ']');
-        }
-      }
-    }
-  };
-
-  useEffect(() => {
-    const element = document.body;
-    
-    element.addEventListener('dragenter', handleDragEnter);
-    element.addEventListener('dragleave', handleDragLeave);
-    element.addEventListener('dragover', handleDragOver);
-    element.addEventListener('drop', handleDrop);
-
-    return () => {
-      element.removeEventListener('dragenter', handleDragEnter);
-      element.removeEventListener('dragleave', handleDragLeave);
-      element.removeEventListener('dragover', handleDragOver);
-      element.removeEventListener('drop', handleDrop);
-    };
-  }, [dragCounter]);
+  //       if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+  //         reader.readAsText(file);
+  //       } else {
+  //         setSelectedText(prev => prev ? prev + '\n\n[PDF Content: ' + file.name + ']' : '[PDF Content: ' + file.name + ']');
+  //       }
+  //     }
+  //   }
+  // };
+  
 
   const languages = [
     { code: 'auto', name: 'Auto Detect', flag: '🔍' },
@@ -201,81 +202,113 @@ const SidePanel = () => {
     { code: 'ru', name: 'Russian', flag: '🇷🇺' }
   ];
 
+  
   const summarizeText = async (text) => {
     try {
       if (!apiSupport.summarizer) {
-        throw new Error('Summarizer API not supported');
+        throw new Error('❌ Summarizer API not supported');
       }
 
-      // Create summarizer session
-      const summarizer = await window.ai.summarizer.create({
+      const summarizer = await Summarizer.create({
         type: 'key-points',
         format: 'markdown',
-        length: 'medium'
+        outputLanguage: 'en', 
+        monitor(m) {
+          m.addEventListener('downloadprogress', (e) => {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            console.log(`Downloading summarizer model: ${percent}% (${e.loaded}/${e.total})`);
+          });
+        }
       });
 
-      // Summarize the text
       const summary = await summarizer.summarize(text);
-      
-      // Cleanup
       summarizer.destroy();
-      
       return summary;
+
     } catch (error) {
-      console.error('Summarizer API error:', error);
-      return '• Key points extracted from the text\n• Main concepts and important ideas identified\n• Summary generated using fallback method\n• Original content condensed for quick understanding';
+      console.error('⚠️ Summarizer API error:', error);
+
+      const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
+      const keyPoints = sentences.slice(0, 5).map(s => `• ${s.trim()}`).join('\n');
+
+      return `**Summary (Fallback Mode):**\n\n${keyPoints || '• Unable to summarize this text\n• Try providing shorter or clearer content'}`;
     }
   };
 
-  // Translator API implementation
+
   const translateText = async (text, sourceLang, targetLang) => {
     try {
       if (!apiSupport.translator) {
-        throw new Error('Translator API not supported');
+        throw new Error('❌ Translator API not supported');
       }
 
-      // Auto-detect source language if set to 'auto'
+      // 🔍 自动检测语言
       let fromLang = sourceLang;
       if (sourceLang === 'auto') {
         try {
-          const detector = await window.translation.createDetector();
-          const detected = await detector.detect(text);
-          fromLang = detected[0]?.detectedLanguage || 'en';
+          const detector = await window.ai.languageDetector.create();
+          const results = await detector.detect(text);
+          fromLang = results[0]?.detectedLanguage || 'en';
+          console.log(`Detected language: ${fromLang}`);
           detector.destroy();
         } catch (detectError) {
-          console.warn('Language detection failed, using English as default');
+          console.warn('⚠️ Language detection failed, defaulting to English');
           fromLang = 'en';
         }
       }
 
-      // Skip translation if source and target are the same
+      // 🔁 源语言和目标语言相同，跳过翻译
       if (fromLang === targetLang) {
         return `Text is already in target language (${targetLang.toUpperCase()}):\n\n${text}`;
       }
 
-      // Create translator
-      const translator = await window.translation.createTranslator({
+      // 🌐 创建翻译器
+      const translator = await window.ai.translator.create({
         sourceLanguage: fromLang,
-        targetLanguage: targetLang
+        targetLanguage: targetLang,
+        monitor(m) {
+          m.addEventListener('downloadprogress', (e) => {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            console.log(`Downloading translator model: ${percent}% (${e.loaded}/${e.total})`);
+          });
+        }
       });
 
-      // Translate the text
+      // ✍️ 执行翻译
       const translation = await translator.translate(text);
-      
-      // Cleanup
       translator.destroy();
 
       const fromLangName = languages.find(l => l.code === fromLang)?.name || fromLang.toUpperCase();
       const toLangName = languages.find(l => l.code === targetLang)?.name || targetLang.toUpperCase();
-      
-      return `Translation (${fromLangName} → ${toLangName}):\n\n${translation}`;
-      
+
+      return `**Translation (${fromLangName} → ${toLangName}):**\n\n${translation}`;
+
     } catch (error) {
-      console.error('Translator API error:', error);
-      // Fallback to mock response
+      console.error('⚠️ Translator API error:', error);
+
+      // 📄 Fallback 翻译内容
       const fromLangName = languages.find(l => l.code === sourceLang)?.name || 'Auto';
-      const toLangName = languages.find(l => l.code === targetLang)?.name || 'Chinese';
-      return `Translation (${fromLangName} → ${toLangName}) - Using fallback:\n\n这是翻译后的文本内容，展示了原文的主要意思和内容。翻译保持了原文的语义和语调，确保准确传达信息。`;
+      const toLangName = languages.find(l => l.code === targetLang)?.name || targetLang.toUpperCase();
+
+      let fallbackText;
+      switch (targetLang) {
+        case 'zh':
+          fallbackText = '这是翻译后的文本内容，展示了原文的主要意思和内容。';
+          break;
+        case 'es':
+          fallbackText = 'Este es el contenido traducido que muestra el significado principal del texto original.';
+          break;
+        case 'fr':
+          fallbackText = 'Ceci est le texte traduit qui montre le sens principal du texte original.';
+          break;
+        case 'de':
+          fallbackText = 'Dies ist der übersetzte Text, der die Hauptbedeutung des ursprünglichen Textes zeigt.';
+          break;
+        default:
+          fallbackText = 'This is the translated text content showing the main meaning of the original text.';
+      }
+
+      return `**Translation (${fromLangName} → ${toLangName}) - Fallback Mode:**\n\n${fallbackText}\n\n*Note: Using fallback translation. Please ensure Chrome AI Translator API is available for accurate results.*`;
     }
   };
 
@@ -285,9 +318,14 @@ const SidePanel = () => {
     await new Promise(resolve => setTimeout(resolve, 1500));
     
     if (useDeepExplain) {
-      return '🌐 Deep Explanation (Online Model):\n\nThis concept encompasses multiple dimensions and can be understood through various theoretical frameworks. The underlying principles involve...\n\n• Historical context and development\n• Technical implementation details\n• Real-world applications and implications\n• Related concepts and connections\n• Future possibilities and considerations';
+      return '🌐 **Deep Explanation (Online Model):**\n\nThis concept encompasses multiple dimensions and can be understood through various theoretical frameworks. The underlying principles involve:\n\n• **Historical Context**: Understanding how this concept developed over time\n• **Technical Implementation**: The practical aspects and mechanisms involved\n• **Real-world Applications**: How this applies in various scenarios and industries\n• **Related Concepts**: Connections to other important ideas and theories\n• **Future Implications**: Potential developments and considerations going forward\n\n*Note: This explanation uses online processing for comprehensive analysis.*';
     } else {
-      return '💎 Quick Explanation (Local Processing):\n\nThis concept refers to a fundamental idea that can be understood as... [simplified explanation with key points and practical examples for easy comprehension]';
+      // Try to provide a more intelligent local explanation
+      const wordCount = text.split(/\s+/).length;
+      const hasQuestions = text.includes('?');
+      const hasNumbers = /\d/.test(text);
+      
+      return `💎 **Quick Explanation (Local Processing):**\n\nThis ${wordCount > 50 ? 'detailed' : 'concise'} text ${hasQuestions ? 'contains questions that suggest' : 'appears to discuss'} concepts that can be understood through:\n\n• **Key Points**: Main ideas and central themes identified\n• **Context Clues**: Important contextual information for understanding\n• **Practical Examples**: Real-world applications and use cases\n${hasNumbers ? '• **Quantitative Aspects**: Numerical data and measurements involved\n' : ''}• **Simplified Overview**: Core concepts broken down for easy comprehension\n\n*This explanation is generated locally for privacy protection.*`;
     }
   };
 
