@@ -12,9 +12,14 @@ const SidePanel = () => {
   const [deepExplain, setDeepExplain] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragCounter, setDragCounter] = useState(0);
+  const [summaryMode, setSummaryMode] = useState('paragraph');
+  const [detailLevel, setDetailLevel] = useState('standard');
+  const [showSummarySettings, setShowSummarySettings] = useState(false);
   const [apiSupport, setApiSupport] = useState({
     summarizer: false,
-    translator: false
+    translator: false,
+    detect: false,
+    prompt: false
   });
 
   useEffect(() => {
@@ -24,7 +29,9 @@ const SidePanel = () => {
   const checkAPISupport = async () => {
     let support = {
       summarizer: false,
-      translator: false
+      translator: false,
+      detect: false,
+      prompt: false
     };
 
     try {
@@ -33,9 +40,13 @@ const SidePanel = () => {
         sourceLanguage: 'en', 
         targetLanguage: 'zh'  
       });
+      const status_detect = await LanguageDetector.availability();
+      const status_prompt = await LanguageModel.availability();
 
       console.log('Summarizer availability status:', status_summarizer);
       console.log('Translator availability status:', status_translator);
+      console.log('Language Detector availability status:', status_detect);
+      console.log('Language prompt availability status:', status_prompt);
 
       if (status_summarizer === 'available') {
         console.log('✅ Summarizer is supported and ready to use.');
@@ -49,6 +60,20 @@ const SidePanel = () => {
         support = { ...support, translator: true };
       } else {
         console.log('❌ Translator is not available. Returned:', status_translator);
+      }
+
+      if (status_detect === 'available') {
+        console.log('✅ Language Detector is supported and ready to use.');
+        support = { ...support, detect: true };
+      } else {
+        console.log('❌ Language Detector is not available. Returned:', status_detect);
+      }
+
+      if(status_prompt === 'available') {
+        console.log('✅ Language prompt is supported and ready to use.');
+        support = { ...support, prompt: true };
+      } else {
+        console.log('❌ Language prompt is not available. Returned:', status_prompt);
       }
     } catch (error) {
       console.error('Error checking API support:', error);
@@ -209,9 +234,25 @@ const SidePanel = () => {
         throw new Error('❌ Summarizer API not supported');
       }
 
+      const detailConfig = {
+        concise: { type: 'tl;dr', length: 'short' },
+        standard: { type: 'key-points', length: 'medium' },
+        detailed: { type: 'headline', length: 'long' }
+      };
+
+      const formatConfig = {
+        bullets: 'markdown',
+        paragraph: 'plain-text',
+        qa: 'markdown'
+      };
+
+      const config = detailConfig[detailLevel];
+      const format = formatConfig[summaryMode];
+
       const summarizer = await Summarizer.create({
-        type: 'key-points',
-        format: 'markdown',
+        type: config.type,
+        format: format,
+        length: config.length,
         outputLanguage: 'en', 
         monitor(m) {
           m.addEventListener('downloadprogress', (e) => {
@@ -221,60 +262,108 @@ const SidePanel = () => {
         }
       });
 
-      const summary = await summarizer.summarize(text);
+      let summary = await summarizer.summarize(text);
       summarizer.destroy();
-      return summary;
+      
+      if (summaryMode === 'bullets' && !summary.includes('•') && !summary.includes('-')) {
+        const sentences = summary.split(/[.!?]+/).filter(s => s.trim().length > 10);
+        summary = sentences.slice(0, detailLevel === 'concise' ? 3 : detailLevel === 'standard' ? 5 : 7)
+          .map(s => `• ${s.trim()}`)
+          .join('\n');
+      } else if (summaryMode === 'qa') {
+        if (!apiSupport.prompt) {
+          throw new Error('❌ Prompt API not available for Q&A generation');
+        }
+
+        const prompt = `
+          Based on the following summary, generate minimum 3, maxmimum 5 as more as possible detailed Q&A pairs.
+          - Cover background, detailed reasoning, potential implications, and author's perspective.
+          - Keep answers concise but informative.
+          Summary:
+          "${summary}"
+          
+          Format:
+          Q1: ...
+          A1: ...
+          Q2: ...
+          A2: ...
+        `;
+
+        const session = await LanguageModel.create({
+          monitor(m) {
+            m.addEventListener("downloadprogress", (e) => {
+              console.log(`Downloaded prompt language model: ${e.loaded * 100}%`);
+            });
+          },
+        });
+
+        const extraQA = await session.prompt(prompt);
+
+        summary = `**In-Depth Q&A Based on Summary:**\n${extraQA}`;
+      }
+
+      return `**Summary (${detailLevel.charAt(0).toUpperCase() + detailLevel.slice(1)} - ${summaryMode === 'bullets' ? 'Bullet Points' : summaryMode === 'paragraph' ? 'Paragraph' : 'Q&A'}):**\n\n${summary}`;
 
     } catch (error) {
       console.error('⚠️ Summarizer API error:', error);
 
       const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
-      const keyPoints = sentences.slice(0, 5).map(s => `• ${s.trim()}`).join('\n');
+      const pointCount = detailLevel === 'concise' ? 3 : detailLevel === 'standard' ? 5 : 7;
+      
+      let fallbackSummary;
+      if (summaryMode === 'bullets') {
+        fallbackSummary = sentences.slice(0, pointCount).map(s => `• ${s.trim()}`).join('\n');
+      } else if (summaryMode === 'qa') {
+        fallbackSummary = `**Q: What is this text about?**\nA: ${sentences.slice(0, 2).join('. ')}\n\n**Q: What are the key points?**\nA: ${sentences.slice(2, pointCount).join('. ')}`;
+      } else {
+        fallbackSummary = sentences.slice(0, pointCount).join('. ');
+      }
 
-      return `**Summary (Fallback Mode):**\n\n${keyPoints || '• Unable to summarize this text\n• Try providing shorter or clearer content'}`;
+      return `**Summary (${detailLevel.charAt(0).toUpperCase() + detailLevel.slice(1)} - Fallback Mode):**\n\n${fallbackSummary || '• Unable to summarize this text\n• Try providing shorter or clearer content'}`;
     }
   };
 
+  const getTranslator = async (sourceLang, targetLang) => {
+    return await Translator.create({
+      sourceLanguage: sourceLang,
+      targetLanguage: targetLang,
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e) => {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          console.log(`📥 Downloading model: ${percent}% (${e.loaded}/${e.total})`);
+        });
+      }
+    });
+  };
 
   const translateText = async (text, sourceLang, targetLang) => {
     try {
-      if (!apiSupport.translator) {
-        throw new Error('❌ Translator API not supported');
-      }
+      if (!apiSupport.translator) throw new Error('❌ Translator API not supported');
+      if (!apiSupport.detect) throw new Error('❌ Language Detector API not supported');
 
-      // 🔍 自动检测语言
       let fromLang = sourceLang;
+
       if (sourceLang === 'auto') {
-        try {
-          const detector = await window.ai.languageDetector.create();
-          const results = await detector.detect(text);
-          fromLang = results[0]?.detectedLanguage || 'en';
-          console.log(`Detected language: ${fromLang}`);
-          detector.destroy();
-        } catch (detectError) {
-          console.warn('⚠️ Language detection failed, defaulting to English');
-          fromLang = 'en';
-        }
+        console.log('🔍 Detecting language...');
+        const detector = await LanguageDetector.create({
+          monitor(m) {
+            m.addEventListener('downloadprogress', (e) => {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              console.log(`📥 Downloading language detector: ${percent}%`);
+            });
+          }
+        });
+        const result = await detector.detect(text);
+        fromLang = result[0]?.detectedLanguage || 'en';
+        detector.destroy();
+        console.log(`✅ Detected language: ${fromLang}`);
       }
 
-      // 🔁 源语言和目标语言相同，跳过翻译
       if (fromLang === targetLang) {
         return `Text is already in target language (${targetLang.toUpperCase()}):\n\n${text}`;
       }
 
-      // 🌐 创建翻译器
-      const translator = await window.ai.translator.create({
-        sourceLanguage: fromLang,
-        targetLanguage: targetLang,
-        monitor(m) {
-          m.addEventListener('downloadprogress', (e) => {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            console.log(`Downloading translator model: ${percent}% (${e.loaded}/${e.total})`);
-          });
-        }
-      });
-
-      // ✍️ 执行翻译
+      const translator = await getTranslator(fromLang, targetLang);
       const translation = await translator.translate(text);
       translator.destroy();
 
@@ -282,51 +371,49 @@ const SidePanel = () => {
       const toLangName = languages.find(l => l.code === targetLang)?.name || targetLang.toUpperCase();
 
       return `**Translation (${fromLangName} → ${toLangName}):**\n\n${translation}`;
-
     } catch (error) {
       console.error('⚠️ Translator API error:', error);
-
-      // 📄 Fallback 翻译内容
-      const fromLangName = languages.find(l => l.code === sourceLang)?.name || 'Auto';
-      const toLangName = languages.find(l => l.code === targetLang)?.name || targetLang.toUpperCase();
-
-      let fallbackText;
-      switch (targetLang) {
-        case 'zh':
-          fallbackText = '这是翻译后的文本内容，展示了原文的主要意思和内容。';
-          break;
-        case 'es':
-          fallbackText = 'Este es el contenido traducido que muestra el significado principal del texto original.';
-          break;
-        case 'fr':
-          fallbackText = 'Ceci est le texte traduit qui montre le sens principal du texte original.';
-          break;
-        case 'de':
-          fallbackText = 'Dies ist der übersetzte Text, der die Hauptbedeutung des ursprünglichen Textes zeigt.';
-          break;
-        default:
-          fallbackText = 'This is the translated text content showing the main meaning of the original text.';
-      }
-
-      return `**Translation (${fromLangName} → ${toLangName}) - Fallback Mode:**\n\n${fallbackText}\n\n*Note: Using fallback translation. Please ensure Chrome AI Translator API is available for accurate results.*`;
+      return '❌ Translation failed. Please ensure Chrome AI Translator API is enabled.';
     }
   };
 
-  // Explanation function (using mock for now, could integrate with other APIs)
-  const explainText = async (text, useDeepExplain) => {
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
+  const explainText = async (text, useDeepExplain) => {    
     if (useDeepExplain) {
       return '🌐 **Deep Explanation (Online Model):**\n\nThis concept encompasses multiple dimensions and can be understood through various theoretical frameworks. The underlying principles involve:\n\n• **Historical Context**: Understanding how this concept developed over time\n• **Technical Implementation**: The practical aspects and mechanisms involved\n• **Real-world Applications**: How this applies in various scenarios and industries\n• **Related Concepts**: Connections to other important ideas and theories\n• **Future Implications**: Potential developments and considerations going forward\n\n*Note: This explanation uses online processing for comprehensive analysis.*';
-    } else {
-      // Try to provide a more intelligent local explanation
-      const wordCount = text.split(/\s+/).length;
-      const hasQuestions = text.includes('?');
-      const hasNumbers = /\d/.test(text);
-      
-      return `💎 **Quick Explanation (Local Processing):**\n\nThis ${wordCount > 50 ? 'detailed' : 'concise'} text ${hasQuestions ? 'contains questions that suggest' : 'appears to discuss'} concepts that can be understood through:\n\n• **Key Points**: Main ideas and central themes identified\n• **Context Clues**: Important contextual information for understanding\n• **Practical Examples**: Real-world applications and use cases\n${hasNumbers ? '• **Quantitative Aspects**: Numerical data and measurements involved\n' : ''}• **Simplified Overview**: Core concepts broken down for easy comprehension\n\n*This explanation is generated locally for privacy protection.*`;
-    }
+      } else {
+        if (!apiSupport.prompt) {
+          throw new Error('❌ Prompt API not available for explanation generation');
+        }
+
+        const prompt = `
+        Provide a detailed yet easy-to-understand explanation based on the following summary. 
+        - Start with a brief overview of the main idea.  
+        - Then explain the key points in detail, including background context, reasoning, and potential implications.  
+        - Highlight the author's perspective if present.  
+        - Use clear, concise sentences that are suitable for a general audience.  
+        - Structure the response in paragraphs for readability.
+
+        Summary:
+        "${text}"
+
+        Format:
+        **Overview:** ...
+        **Detailed Explanation:** ...
+        **Implications/Author's View:** ...
+        `;
+
+        const session = await LanguageModel.create({
+          monitor(m) {
+            m.addEventListener("downloadprogress", (e) => {
+              console.log(`Downloaded explanation language model: ${e.loaded * 100}%`);
+            });
+          },
+        });
+
+        const explanation = await session.prompt(prompt);
+
+        return `**Detailed Explanation:**\n${explanation}`;
+      }
   };
 
   const processText = async (action, text) => {
@@ -457,7 +544,79 @@ const SidePanel = () => {
       case 'summarize':
         return (
           <div className="space-y-4">
-            {/* API Support Indicator for Summarizer */}
+            {/* Settings Toggle */}
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setShowSummarySettings(!showSummarySettings)}
+                className="w-full p-3 bg-gray-50 hover:bg-gray-100 transition-colors duration-200 flex items-center justify-between"
+              >
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm">🔍︎</span>
+                  <span className="font-medium text-gray-800">Result</span>
+                  <span className="text-xs text-gray-500">
+                    {summaryMode === 'bullets' ? 'Bullets' : summaryMode === 'paragraph' ? 'Paragraph' : 'Q&A'} · {detailLevel}
+                  </span>
+                </div>
+                <span className={`text-gray-400 transition-transform duration-200 ${showSummarySettings ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
+              
+              {showSummarySettings && (
+                <div className="p-3 bg-white border-t border-gray-200 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                  {/* Summary Mode */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Summary Mode</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'bullets', label: 'Bullets', icon: '•' },
+                        { id: 'paragraph', label: 'Paragraph', icon: '¶' },
+                        { id: 'qa', label: 'Q&A', icon: '?' }
+                      ].map((mode) => (
+                        <button
+                          key={mode.id}
+                          onClick={() => setSummaryMode(mode.id)}
+                          className={`p-2 rounded border text-xs font-medium transition-colors duration-200 ${
+                            summaryMode === mode.id
+                              ? 'border-blue-500 bg-blue-50 text-blue-600'
+                              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                          }`}
+                        >
+                          <span className="mr-1">{mode.icon}</span>
+                          {mode.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Detail Level */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Detail Level</label>
+                    <div className="flex gap-3">
+                      {[
+                        { id: 'concise', label: 'Concise' },
+                        { id: 'standard', label: 'Standard' },
+                        { id: 'detailed', label: 'Detailed' }
+                      ].map((level) => (
+                        <label key={level.id} className="flex items-center cursor-pointer">
+                          <input
+                            type="radio"
+                            name="detailLevel"
+                            value={level.id}
+                            checked={detailLevel === level.id}
+                            onChange={(e) => setDetailLevel(e.target.value)}
+                            className="mr-2 text-blue-500 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">{level.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* API Support Indicator */}
             <div className={`text-xs p-2 rounded ${apiSupport.summarizer ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
               {apiSupport.summarizer ? '✅ Using Chrome Summarizer API' : '⚠️ Using fallback summarization'}
             </div>
@@ -601,12 +760,12 @@ const SidePanel = () => {
           <div className="flex items-center space-x-1">
             <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${
               (activeTab === 'explain' && deepExplain) ? 'bg-blue-400' : 
-              (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) ? 'bg-green-400' :
+              (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) || (activeTab === 'explain' && apiSupport.prompt) ? 'bg-green-400' :
               'bg-yellow-400'
             }`}></div>
             <span>
               {(activeTab === 'explain' && deepExplain) ? 'Online Processing' : 
-               (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) ? 'Chrome API' :
+               (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) || (activeTab === 'explain' && apiSupport.prompt) ? 'Chrome API' :
                'Fallback Mode'}
             </span>
           </div>
@@ -702,6 +861,21 @@ const SidePanel = () => {
             transform: scale(2);
             opacity: 0;
           }
+        }
+
+        @keyframes slide-in-from-top-2 {
+          from { 
+            opacity: 0;
+            transform: translateY(-8px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .slide-in-from-top-2 {
+          animation-name: slide-in-from-top-2;
         }
       `}</style>
     </div>
