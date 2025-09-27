@@ -516,7 +516,6 @@ const SidePanel = () => {
           break;
         case 'chat':
           if (chatHistory.length === 0 && text.trim()) {
-            setIsChatMode(true);
             processedResult =await chatbotText(text);
             setSelectedText('');
           }
@@ -786,59 +785,61 @@ const SidePanel = () => {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex space-x-2">
-              {selectedText.trim() && (
-                <button
-                  onClick={() => setCurrentMessage(selectedText.trim())}
-                  className="px-3 py-2 bg-blue-100 text-blue-700 text-xs rounded-md hover:bg-blue-200 transition-colors flex items-center space-x-1"
-                >
-                  <span>📄</span>
-                  <span>Paste Selected Text</span>
-                </button>
-              )}
+            <div>
+              <div className="flex space-x-2">
+                {selectedText.trim() && (
+                  <button
+                    onClick={() => setCurrentMessage(selectedText.trim())}
+                    className="px-3 py-2 bg-blue-100 text-blue-700 text-xs rounded-md hover:bg-blue-200 transition-colors flex items-center space-x-1"
+                  >
+                    <span>📄</span>
+                    <span>Paste Selected Text</span>
+                  </button>
+                )}
 
-              <button
-                onClick={extractPageContent}
-                className="px-3 py-2 bg-green-100 text-green-700 text-xs rounded-md hover:bg-green-200 transition-colors flex items-center space-x-1"
-              >
-                <span>📖</span>
-                <span>Read Page</span>
-              </button>
-            </div>
-
-            {/* Chat Input */}
-            <div className="flex space-x-2">
-              <div className="flex-1 relative">
-                <textarea
-                  value={currentMessage}
-                  onChange={(e) => setCurrentMessage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleChatSend();
-                    }
-                  }}
-                  placeholder="Type your message... (Press Enter to send)"
-                  className="w-full p-3 pr-12 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  rows="2"
-                  disabled={!apiSupport.chatbot || isStreaming}
-                />
                 <button
-                  onClick={handleChatSend}
-                  disabled={!currentMessage.trim() || !apiSupport.chatbot || isStreaming}
-                  className="absolute right-2 bottom-2 p-1.5 bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  onClick={extractPageContent}
+                  className="px-3 py-2 bg-green-100 text-green-700 text-xs rounded-md hover:bg-green-200 transition-colors flex items-center space-x-1"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
+                  <span>📖</span>
+                  <span>Read Page</span>
                 </button>
+              </div>
+
+              {/* Chat Input */}
+              <div className="flex space-x-2">
+                <div className="flex-1 relative">
+                  <textarea
+                    value={currentMessage}
+                    onChange={(e) => setCurrentMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleChatSend();
+                      }
+                    }}
+                    placeholder="Type your message... (Press Enter to send)"
+                    className="w-full p-3 pr-12 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    rows="2"
+                    disabled={!apiSupport.chatbot || isStreaming}
+                  />
+                  <button
+                    onClick={handleChatSend}
+                    disabled={!currentMessage.trim() || !apiSupport.chatbot || isStreaming}
+                    className="absolute right-2 bottom-2 p-1.5 bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* API Support Indicator */}
-            <div className={`text-xs p-2 rounded ${apiSupport.chatbot ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {/* <div className={`text-xs p-2 rounded ${apiSupport.chatbot ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
               {apiSupport.chatbot ? '✅ Using Chrome Chatbot API' : '❌ Chatbot API not available'}
-            </div>
+            </div> */}
           </div>
         );
         
@@ -904,7 +905,7 @@ const SidePanel = () => {
 
       {/* Animated Content */}
       <div className="flex-1 p-4 overflow-y-auto ">
-        {!isChatMode && (
+        {activeTab !== 'chat' && (
           <div className="mb-4 relative">
             <h3 className="font-medium text-gray-900 mb-3 flex items-center space-x-2">
               <span>Selected Text</span>
@@ -943,50 +944,26 @@ const SidePanel = () => {
         </div>
 
         {/* Action Button */}
-        <button
-          onClick={() => {
-            if (activeTab === 'chat') {
-              if (selectedText.trim()) {
-                chatbotText(selectedText.trim());
-                setSelectedText('');
-              }
-            } else {
-              processText(activeTab, selectedText);
-            }
-          }}
-          disabled={
-            activeTab === 'chat' 
-              ? (!selectedText.trim() && chatHistory.length > 0) || isStreaming
-              : isLoading || !selectedText.trim()
-          }
-          className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none ${
-            activeTab === 'summarize' ? 'bg-blue-500 hover:bg-blue-600' :
-            activeTab === 'translate' ? 'bg-green-500 hover:bg-green-600' :
-            activeTab === 'chat' ? 'bg-purple-500 hover:bg-purple-600' :
-            'bg-amber-500 hover:bg-amber-600'
-          } text-white ${
-            (activeTab === 'chat' 
-              ? (!selectedText.trim() && chatHistory.length > 0) || isStreaming
-              : isLoading || !selectedText.trim()) 
-            ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-        >
-          {activeTab === 'chat' && isStreaming ? (
-            <div className="flex items-center justify-center space-x-2">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              <span>AI is thinking...</span>
-            </div>
-          ) : isLoading ? (
-            <div className="flex items-center justify-center space-x-2">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              <span>Processing...</span>
-            </div>
-          ) : activeTab === 'chat' ? (
-            chatHistory.length === 0 ? 'Start Conversation' : 'New Topic'
-          ) : (
-            `${tabs.find(t => t.id === activeTab)?.label} Text`
-          )}
-        </button>
+        {activeTab !== 'chat' && (
+          <button
+            onClick={() => processText(activeTab, selectedText)}
+            disabled={isLoading || !selectedText.trim()}
+            className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none ${
+              activeTab === 'summarize' ? 'bg-blue-500 hover:bg-blue-600' :
+              activeTab === 'translate' ? 'bg-green-500 hover:bg-green-600' :
+              'bg-amber-500 hover:bg-amber-600'
+            } text-white ${isLoading || !selectedText.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {isLoading ? (
+              <div className="flex items-center justify-center space-x-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <span>Processing...</span>
+              </div>
+            ) : (
+              `${tabs.find(t => t.id === activeTab)?.label} Text`
+            )}
+          </button>
+        )}
 
         {/* Results with Animation */}
         {result && (
@@ -1002,7 +979,7 @@ const SidePanel = () => {
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t bg-gray-50 flex-shrink-0">
+      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
         <div className="flex items-center justify-between text-xs text-gray-500">
           <div className="flex items-center space-x-1">
             <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${
