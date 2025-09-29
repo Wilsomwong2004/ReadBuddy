@@ -209,7 +209,6 @@ function showResult(title, content) {
   
   document.body.appendChild(resultPanel);
   
-  // Add event listeners
   const closeBtn = resultPanel.querySelector('.readbuddy-close');
   closeBtn.addEventListener('click', hideResult);
   

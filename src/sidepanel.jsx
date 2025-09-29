@@ -122,7 +122,6 @@ const SidePanel = () => {
       }
     };
 
-    // Listen for messages from content script and background
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       chrome.runtime.onMessage.addListener(handleMessage);
       return () => {
@@ -357,23 +356,15 @@ const SidePanel = () => {
     }
   };
 
-  const getTranslator = async (sourceLang, targetLang) => {
-    return await Translator.create({
-      sourceLanguage: sourceLang,
-      targetLanguage: targetLang,
-      monitor(m) {
-        m.addEventListener('downloadprogress', (e) => {
-          const percent = Math.round((e.loaded / e.total) * 100);
-          console.log(`📥 Downloading model: ${percent}% (${e.loaded}/${e.total})`);
-        });
-      }
-    });
-  };
-
-  const translateText = async (text, sourceLang, targetLang) => {
+  const translateText = async (text) => {
     try {
       if (!apiSupport.translator) throw new Error('❌ Translator API not supported');
       if (!apiSupport.detect) throw new Error('❌ Language Detector API not supported');
+
+      let sourceLang = translateFrom;
+      let targetLang = translateTo;
+
+      console.log("Translate from:", sourceLang, "to:", targetLang);
 
       let fromLang = sourceLang;
 
@@ -383,7 +374,7 @@ const SidePanel = () => {
           monitor(m) {
             m.addEventListener('downloadprogress', (e) => {
               const percent = Math.round((e.loaded / e.total) * 100);
-              console.log(`📥 Downloading language detector: ${percent}%`);
+              console.log(`Downloading language detector: ${percent}%`);
             });
           }
         });
@@ -397,7 +388,17 @@ const SidePanel = () => {
         return `Text is already in target language (${targetLang.toUpperCase()}):\n\n${text}`;
       }
 
-      const translator = await getTranslator(fromLang, targetLang);
+      const translator = await Translator.create({
+        sourceLanguage: fromLang,
+        targetLanguage: targetLang,
+        monitor(m) {
+          m.addEventListener('downloadprogress', (e) => {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            console.log(`Downloading model: ${percent}% (${e.loaded}/${e.total})`);
+          });
+        }
+      });
+
       const translation = await translator.translate(text);
       translator.destroy();
 
@@ -471,13 +472,11 @@ const SidePanel = () => {
         }
       });
 
-      // Add user message to chat history
       const userMessage = { type: 'user', content: text, timestamp: Date.now() };
       setChatHistory(prev => [...prev, userMessage]);
 
       const response = await chatbot.prompt(text);
 
-      // Add bot response to chat history
       const botMessage = { type: 'bot', content: response, timestamp: Date.now() };
       setChatHistory(prev => [...prev, botMessage]);
 
