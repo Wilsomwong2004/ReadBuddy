@@ -25,7 +25,7 @@ const Popup = () => {
   const openSettings = () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('settings.html') });
     window.close();
-    };
+  };
 
   const actions = [
     {

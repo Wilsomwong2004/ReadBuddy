@@ -14,7 +14,6 @@ document.addEventListener('mouseup', () => {
   }
 });
 
-// Quick action tooltip
 function showQuickActions(textToPreserve) {
   hideQuickActions();
   const selection = window.getSelection();
@@ -103,9 +102,6 @@ async function handleAction(action, text) {
       case 'define':
         await defineText(text);
         break;
-      case 'simplify':
-        await simplifyText(text);
-        break;
       default:
         console.log('Unknown action:', action);
     }
@@ -117,14 +113,12 @@ async function handleAction(action, text) {
   }
 }
 
-// Action implementations
 async function summarizeText(text) {
   const result = await callAI('summarize', text);
   showResult('Summary', result);
 }
 
 async function translateText(text) {
-  // Detect language and translate to English by default
   const result = await callAI('translate', text);
   showResult('Translation', result);
 }
@@ -139,48 +133,29 @@ async function defineText(text) {
   showResult('Definition', result);
 }
 
-async function simplifyText(text) {
-  const result = await callAI('simplify', text);
-  showResult('Simplified', result);
-}
-
-// AI API call (you'll need to implement this based on your chosen AI service)
 async function callAI(action, text) {
-  // This is a placeholder - replace with your actual AI API call
-  // You might use OpenAI, Claude, or another AI service
-  
-  const prompts = {
-    summarize: `Please summarize the following text in 2-3 sentences:\n\n${text}`,
-    translate: `Please translate the following text to English (if it's not already in English, if it is, translate to Spanish):\n\n${text}`,
-    explain: `Please explain the following text in simple terms:\n\n${text}`,
-    define: `Please define or explain the key terms/concepts in the following text:\n\n${text}`,
-    simplify: `Please rewrite the following text in simpler language that's easier to understand:\n\n${text}`
-  };
-  
-  // Example using fetch to call an AI API
-  // Replace this with your actual API endpoint and key
-  const response = await fetch('YOUR_AI_API_ENDPOINT', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer YOUR_API_KEY'
-    },
-    body: JSON.stringify({
-      prompt: prompts[action],
-      max_tokens: 500,
-      temperature: 0.7
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error('API request failed');
+  const sidebar = document.getElementById('readbuddy-sidebar');
+  if (sidebar) {
+    sidebar.style.display = 'block'; 
+  } else {
+    console.warn('ReadBuddy sidebar not found');
   }
-  
-  const data = await response.json();
-  return data.choices[0].text.trim(); // Adjust based on your API response format
+
+  const inputBox = document.querySelector('#readbuddy-sidebar textarea, #readbuddy-sidebar input');
+  if (inputBox) {
+    inputBox.value = text;
+    inputBox.dispatchEvent(new Event('input', { bubbles: true })); 
+  } else {
+    console.warn('No input box found inside ReadBuddy sidebar');
+  }
+
+  if (action) {
+    console.log(`Action: ${action}, text pasted into sidebar.`);
+  }
+
+  return text; 
 }
 
-// UI feedback functions
 function showLoadingIndicator() {
   const loader = document.createElement('div');
   loader.id = 'readbuddy-loader';
@@ -206,7 +181,6 @@ function hideLoadingIndicator() {
 }
 
 function showResult(title, content) {
-  // Remove any existing result
   hideResult();
   
   const resultPanel = document.createElement('div');
@@ -245,7 +219,6 @@ function showResult(title, content) {
   const speakBtn = resultPanel.querySelector('.readbuddy-speak');
   speakBtn.addEventListener('click', () => speakText(content));
   
-  // Auto-hide after 10 seconds
   setTimeout(() => {
     hideResult();
   }, 10000);

@@ -1,5 +1,5 @@
-// tailwind.config.js
 export default {
+   darkMode: ["class"],
   content: [
     './index.html',
     './popup.html',
@@ -11,3 +11,4 @@ export default {
   },
   plugins: [],
 }
+ 

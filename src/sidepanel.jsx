@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
+import { Settings } from 'lucide-react';
 import './index.css';
 
 const SidePanel = () => {
@@ -19,6 +20,7 @@ const SidePanel = () => {
   const [chatHistory, setChatHistory] = useState([]);
   const [currentMessage, setCurrentMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [apiSupport, setApiSupport] = useState({
     summarizer: false,
     translator: false,
@@ -30,6 +32,18 @@ const SidePanel = () => {
   useEffect(() => {
     checkAPISupport();
   }, []);
+
+  const openSettings = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('settings.html') });
+    window.close();
+  };
+
+  const endOfMessagesRef = useRef(null);
+  useEffect(() => {
+    if(endOfMessagesRef.current) {
+      endOfMessagesRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatHistory, isStreaming]);
 
   const checkAPISupport = async () => {
     let support = {
@@ -150,14 +164,19 @@ const SidePanel = () => {
               }
             }
             
-            // Fallback to body but filter out navigation and footer content
             const bodyText = document.body.innerText;
             return bodyText.trim();
           }
         });
 
         if (results && results[0] && results[0].result) {
-          setSelectedText(results[0].result.substring(0, 5000)); // Limit to 5000 chars
+          const content = results[0].result.substring(0, 5000); 
+
+          if (activeTab === 'chat'){
+            setCurrentMessage(content);
+          } else {
+            setSelectedText(content);
+          }
         }
       }
     } catch (error) {
@@ -547,11 +566,11 @@ const SidePanel = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">From</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-50">From</label>
                 <select
                   value={translateFrom}
                   onChange={(e) => setTranslateFrom(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm dark:text-white dark:bg-gray-800 dark:border-gray-700"
                 >
                   {languages.map((lang) => (
                     <option key={lang.code} value={lang.code}>
@@ -561,11 +580,11 @@ const SidePanel = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">To</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-50">To</label>
                 <select
                   value={translateTo}
                   onChange={(e) => setTranslateTo(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm dark:text-white dark:bg-gray-800 dark:border-gray-700"
                 >
                   {languages.filter(l => l.code !== 'auto').map((lang) => (
                     <option key={lang.code} value={lang.code}>
@@ -576,30 +595,32 @@ const SidePanel = () => {
               </div>
             </div>
 
-            <div className={`text-xs p-2 rounded ${apiSupport.translator ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
+            {/* <div className={`text-xs p-2 rounded ${apiSupport.translator ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
               {apiSupport.translator ? '✅ Using Chrome Translator API' : '⚠️ Using fallback translation'}
-            </div>
+            </div> */}
           </div>
         );
       
       case 'explain':
         return (
           <div className="space-y-4">
-            <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-lg border border-amber-200">
+            <div className="bg-gradient-to-r from-amber-50 dark:from-amber-800 to-orange-50 dark:to-yellow-700 p-4 rounded-lg border border-amber-200 dark:border-amber-700">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="flex-shrink-0">
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-300 ${
-                      deepExplain ? 'bg-amber-500' : 'bg-gray-300'
-                    }`}>
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-300 ${
+                        deepExplain ? 'bg-amber-500 dark:bg-amber-700' : 'bg-gray-300 dark:bg-gray-600'
+                      }`}
+                    >
                       {deepExplain ? '🌐' : '💎'}
                     </div>
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900 text-sm">
+                    <p className="font-medium text-gray-900 dark:text-white text-sm">
                       {deepExplain ? 'Deep Explanation' : 'Quick Explanation'}
                     </p>
-                    <p className="text-xs text-gray-600">
+                    <p className="text-xs text-gray-600 dark:text-gray-300">
                       {deepExplain ? 'Online Model - Comprehensive analysis' : 'Local Processing - Fast explanation'}
                     </p>
                   </div>
@@ -627,29 +648,27 @@ const SidePanel = () => {
       case 'summarize':
         return (
           <div className="space-y-4">
-            {/* Settings Toggle */}
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 cursor-pointer">
               <button
                 onClick={() => setShowSummarySettings(!showSummarySettings)}
-                className="w-full p-3 bg-gray-50 hover:bg-gray-100 transition-colors duration-200 flex items-center justify-between"
+                className="w-full p-3 bg-gray-50 hover:bg-gray-100 transition-colors duration-200 flex items-center justify-between dark:bg-gray-800 dark:hover:bg-gray-800"
               >
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 dark:bg-gray-800">
                   <span className="text-sm">🔍︎</span>
-                  <span className="font-medium text-gray-800">Result</span>
-                  <span className="text-xs text-gray-500">
+                  <span className="font-medium text-gray-800 dark:text-white">Result</span>
+                  <span className="text-xs text-gray-500 dark:text-white">
                     {summaryMode === 'bullets' ? 'Bullets' : summaryMode === 'paragraph' ? 'Paragraph' : 'Q&A'} · {detailLevel}
                   </span>
                 </div>
-                <span className={`text-gray-400 transition-transform duration-200 ${showSummarySettings ? 'rotate-180' : ''}`}>
+                <span className={`text-gray-400 transition-transform duration-200 dark:text-gray-50 ${showSummarySettings ? 'rotate-180' : ''}`}>
                   ▼
                 </span>
               </button>
               
               {showSummarySettings && (
-                <div className="p-3 bg-white border-t border-gray-200 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                  {/* Summary Mode */}
+                <div className="p-3 bg-white border-t border-gray-200 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200 dark:bg-gray-800 dark:border-gray-700 ">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Summary Mode</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-white">Summary Mode</label>
                     <div className="grid grid-cols-3 gap-2">
                       {[
                         { id: 'bullets', label: 'Bullets', icon: '•' },
@@ -659,14 +678,14 @@ const SidePanel = () => {
                         <button
                           key={mode.id}
                           onClick={() => setSummaryMode(mode.id)}
-                          className={`p-2 rounded border text-xs font-medium transition-colors duration-200 ${
+                          className={`p-2 rounded border text-xs font-medium transition-colors duration-200 cursor-pointer ${
                             summaryMode === mode.id
-                              ? 'border-blue-500 bg-blue-50 text-blue-600'
-                              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                              ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-900 dark:text-white'
+                              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:bg-gray-700 dark:text-gray-300'
                           }`}
                         >
-                          <span className="mr-1">{mode.icon}</span>
-                          {mode.label}
+                          <span className="mr-1 dark:text-white"> {mode.icon} </span>
+                          <span className="dark:text-white"> {mode.label} </span>
                         </button>
                       ))}
                     </div>
@@ -674,7 +693,7 @@ const SidePanel = () => {
 
                   {/* Detail Level */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Detail Level</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-white">Detail Level</label>
                     <div className="flex gap-3">
                       {[
                         { id: 'concise', label: 'Concise' },
@@ -688,9 +707,9 @@ const SidePanel = () => {
                             value={level.id}
                             checked={detailLevel === level.id}
                             onChange={(e) => setDetailLevel(e.target.value)}
-                            className="mr-2 text-blue-500 focus:ring-blue-500"
+                            className="mr-2 text-blue-500"
                           />
-                          <span className="text-sm text-gray-700">{level.label}</span>
+                          <span className="text-sm text-gray-700 dark:text-white">{level.label}</span>
                         </label>
                       ))}
                     </div>
@@ -699,27 +718,48 @@ const SidePanel = () => {
               )}
             </div>
 
-            {/* API Support Indicator */}
-            <div className={`text-xs p-2 rounded ${apiSupport.summarizer ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
+            {/* <div className={`text-xs p-2 rounded ${apiSupport.summarizer ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
               {apiSupport.summarizer ? '✅ Using Chrome Summarizer API' : '⚠️ Using fallback summarization'}
-            </div>
+            </div> */}
           </div>
         );
       
       case 'chat':
         return (
-          <div className="space-y-4">
-            <div className="bg-white border border-gray-200 rounded-lg max-h-96 overflow-y-auto">
+          <div className="flex flex-col h-[600px] overflow-y-hidden space-y-4">
+            <div className="flex items-center justify-between bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900 dark:to-pink-900 p-3 rounded-lg border border-purple-200 dark:border-purple-700">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-purple-100 dark:bg-purple-800 rounded-full flex items-center justify-center">
+                  <span className="text-purple-600 dark:text-purple-300">🤖</span>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-white text-sm">AI Assistant</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    {apiSupport.chatbot ? 'Ready to chat' : 'Chatbot unavailable'}
+                  </p>
+                </div>
+              </div>
+              {chatHistory.length > 0 && (
+                <button
+                  onClick={clearChatHistory}
+                  className="text-xs text-purple-600 dark:text-purple-300 hover:text-purple-800 dark:hover:text-purple-400 px-2 py-1 rounded hover:bg-purple-100 dark:hover:bg-purple-800 transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
               {chatHistory.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
+                <div className="h-full flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
                   <div className="text-4xl mb-2">💬</div>
                   <p className="text-sm">Start a conversation with the AI assistant</p>
-                  <p className="text-xs mt-1 text-gray-400">
+                  <p className="text-xs mt-1 text-gray-400 dark:text-gray-500">
                     Ask questions, request explanations, or just chat!
                   </p>
                 </div>
               ) : (
-                <div className="p-4 space-y-4">
+                <div className="space-y-4">
                   {chatHistory.map((message, index) => (
                     <div
                       key={index}
@@ -729,68 +769,57 @@ const SidePanel = () => {
                         className={`max-w-[80%] p-3 rounded-lg ${
                           message.type === 'user'
                             ? 'bg-purple-500 text-white rounded-br-none'
-                            : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-none'
                         }`}
                       >
                         <p className="text-sm whitespace-pre-line">{message.content}</p>
-                        <p className={`text-xs mt-1 ${
-                          message.type === 'user' ? 'text-purple-100' : 'text-gray-500'
-                        }`}>
+                        <p
+                          className={`text-xs mt-1 ${
+                            message.type === 'user'
+                              ? 'text-purple-100'
+                              : 'text-gray-500 dark:text-gray-400'
+                          }`}
+                        >
                           {new Date(message.timestamp).toLocaleTimeString()}
                         </p>
                       </div>
                     </div>
                   ))}
-                  
-                  {/* Streaming indicator */}
+
                   {isStreaming && (
                     <div className="flex justify-start">
-                      <div className="bg-gray-100 text-gray-800 p-3 rounded-lg rounded-bl-none">
+                      <div className="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 p-3 rounded-lg rounded-bl-none">
                         <div className="flex items-center space-x-2">
                           <div className="flex space-x-1">
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                            <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"></div>
+                            <div
+                              className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
+                              style={{ animationDelay: "0.1s" }}
+                            ></div>
+                            <div
+                              className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
+                              style={{ animationDelay: "0.2s" }}
+                            ></div>
                           </div>
-                          <span className="text-xs text-gray-500">AI is thinking...</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            AI is thinking...
+                          </span>
                         </div>
                       </div>
                     </div>
                   )}
+
+                  <div ref={endOfMessagesRef} />
                 </div>
               )}
             </div>
 
-            {/* AI Assistant Status */}
-            <div className="flex items-center justify-between bg-gradient-to-r from-purple-50 to-pink-50 p-3 rounded-lg border border-purple-200">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                  <span className="text-purple-600">🤖</span>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900 text-sm">AI Assistant</p>
-                  <p className="text-xs text-gray-600">
-                    {apiSupport.chatbot ? 'Ready to chat' : 'Chatbot unavailable'}
-                  </p>
-                </div>
-              </div>
-              {chatHistory.length > 0 && (
-                <button
-                  onClick={clearChatHistory}
-                  className="text-xs text-purple-600 hover:text-purple-800 px-2 py-1 rounded hover:bg-purple-100 transition-colors"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div>
+            <div className="space-y-2">
               <div className="flex space-x-2">
                 {selectedText.trim() && (
                   <button
                     onClick={() => setCurrentMessage(selectedText.trim())}
-                    className="px-3 py-2 bg-blue-100 text-blue-700 text-xs rounded-md hover:bg-blue-200 transition-colors flex items-center space-x-1"
+                    className="px-3 py-2 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs rounded-md hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors flex items-center space-x-1"
                   >
                     <span>📄</span>
                     <span>Paste Selected Text</span>
@@ -799,27 +828,26 @@ const SidePanel = () => {
 
                 <button
                   onClick={extractPageContent}
-                  className="px-3 py-2 bg-green-100 text-green-700 text-xs rounded-md hover:bg-green-200 transition-colors flex items-center space-x-1"
+                  className="px-3 py-2 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-xs rounded-md hover:bg-green-200 dark:hover:bg-green-800 transition-colors flex items-center space-x-1"
                 >
                   <span>📖</span>
                   <span>Read Page</span>
                 </button>
               </div>
 
-              {/* Chat Input */}
               <div className="flex space-x-2">
                 <div className="flex-1 relative">
                   <textarea
                     value={currentMessage}
                     onChange={(e) => setCurrentMessage(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
+                      if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         handleChatSend();
                       }
                     }}
                     placeholder="Type your message... (Press Enter to send)"
-                    className="w-full p-3 pr-12 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full p-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-200"
                     rows="2"
                     disabled={!apiSupport.chatbot || isStreaming}
                   />
@@ -828,18 +856,23 @@ const SidePanel = () => {
                     disabled={!currentMessage.trim() || !apiSupport.chatbot || isStreaming}
                     className="absolute right-2 bottom-2 p-1.5 bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                      />
                     </svg>
                   </button>
                 </div>
               </div>
             </div>
-
-            {/* API Support Indicator */}
-            {/* <div className={`text-xs p-2 rounded ${apiSupport.chatbot ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-              {apiSupport.chatbot ? '✅ Using Chrome Chatbot API' : '❌ Chatbot API not available'}
-            </div> */}
           </div>
         );
         
@@ -849,15 +882,14 @@ const SidePanel = () => {
   };
 
   return (
-    <div className="w-full min-h-screen bg-white flex flex-col relative">
-      {/* Drag and Drop Overlay */}
+    <div className="w-full min-h-screen overflow-hidden bg-white dark:bg-gray-900 flex flex-col relative pb-20">
       {isDragging && (
-        <div className="absolute inset-0 z-50 bg-blue-50 bg-opacity-95 flex items-center justify-center animate-in fade-in duration-200">
-          <div className="border-4 border-dashed border-blue-400 rounded-2xl p-12 bg-white shadow-lg animate-pulse">
+        <div className="absolute inset-0 z-50 bg-blue-50 dark:bg-blue-900 bg-opacity-95 flex items-center justify-center animate-in fade-in duration-200">
+          <div className="border-4 border-dashed border-blue-400 rounded-2xl p-12 bg-white dark:bg-gray-800 shadow-lg animate-pulse">
             <div className="text-center">
               <div className="text-6xl mb-4 animate-bounce">📄</div>
-              <h3 className="text-xl font-semibold text-blue-600 mb-2">Drop Here</h3>
-              <p className="text-sm text-blue-500">
+              <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400 mb-2">Drop Here</h3>
+              <p className="text-sm text-blue-500 dark:text-blue-300">
                 Drop text or PDF files to analyze
               </p>
               <div className="flex items-center justify-center mt-4 space-x-2">
@@ -870,12 +902,10 @@ const SidePanel = () => {
         </div>
       )}
 
-      {/* Animated Tabs */}
-      <div className="p-3 border-b border-gray-200">
-        <div className="relative grid grid-cols-4 gap-0.5 bg-gray-200 rounded-lg p-1">
-          {/* Animated Background */}
+      <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+        <div className="relative grid grid-cols-4 gap-0.5 bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
           <div 
-            className="absolute top-1 bottom-1 bg-white rounded-md shadow-sm transition-all duration-300 ease-out"
+            className="absolute top-1 bottom-1 bg-white dark:bg-gray-800 rounded-md shadow-sm transition-all duration-300 ease-out"
             style={{
               left: `calc(${tabs.findIndex(t => t.id === activeTab)} * 25% + 0.125rem)`,
               width: 'calc(25% - 0.25rem)'
@@ -888,8 +918,8 @@ const SidePanel = () => {
               onClick={() => setActiveTab(tab.id)}
               className={`relative flex flex-col items-center py-2 px-1 rounded-md text-xs font-medium transition-all duration-300 transform hover:scale-105 ${
                 activeTab === tab.id 
-                  ? 'text-gray-900 z-10' 
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'text-gray-900 dark:text-white z-10' 
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
               }`}
             >
               <span className={`text-sm mb-0.5 transition-transform duration-300 ${
@@ -904,39 +934,38 @@ const SidePanel = () => {
       </div>
 
       {/* Animated Content */}
-      <div className="flex-1 p-4 overflow-y-auto ">
+      <div className="flex-1 p-4 overflow-y-auto bg-white dark:bg-gray-900">
         {activeTab !== 'chat' && (
           <div className="mb-4 relative">
-            <h3 className="font-medium text-gray-900 mb-3 flex items-center space-x-2">
+            <h3 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center space-x-2">
               <span>Selected Text</span>
               {selectedText && (
                 <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
                   {selectedText.length} characters
                 </span>
               )}
-            </h3>
 
-            <div className="relative">
-              {activeTab === 'summarize' && !selectedText.trim() && (
+              {['summarize', 'translate', 'explain'].includes(activeTab) && !selectedText.trim() && (
                 <button
                   onClick={extractPageContent}
-                  className="absolute top-2 right-2 px-3 py-1 bg-blue-500 text-white text-xs rounded-md hover:bg-blue-600 transition-colors"
+                  className="absolute top-[-1.5] right-2 px-3 py-1 bg-blue-500 text-white text-xs rounded-md hover:bg-blue-600 transition-colors"
                 >
                   Extract Page Content
                 </button>
               )}
+            </h3>
 
+            <div className="relative">
               <textarea
                 value={selectedText}
                 onChange={(e) => setSelectedText(e.target.value)}
                 placeholder="Paste text here, or drag and drop content from any webpage or PDF file..."
-                className="w-full h-40 bg-gray-50 rounded-lg p-4 border-2 border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all duration-200 resize-none"
+                className="w-full h-40 bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border-2 border-gray-200 dark:border-gray-600 transition-all duration-200 resize-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
               />
             </div>
           </div>
         )}
 
-        {/* Tab-specific Content with Animation */}
         <div className="mb-6 min-h-auto">
           <div key={activeTab} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             {renderTabContent()}
@@ -966,11 +995,11 @@ const SidePanel = () => {
         )}
 
         {/* Results with Animation */}
-        {result && (
+        {activeTab !== 'chat' && result && (
           <div className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h3 className="font-medium text-gray-900 mb-3">Result</h3>
-            <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200 shadow-sm">
-              <div className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">
+            <h3 className="font-medium text-gray-900 dark:text-white mb-3">Result</h3>
+            <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm">
+              <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed">
                 {result}
               </div>
             </div>
@@ -979,23 +1008,49 @@ const SidePanel = () => {
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
-        <div className="flex items-center justify-between text-xs text-gray-500">
-          <div className="flex items-center space-x-1">
-            <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-              (activeTab === 'explain' && deepExplain) ? 'bg-blue-400' : 
-              (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) || (activeTab === 'explain' && apiSupport.prompt || (activeTab === 'chat' && apiSupport.chatbot)) ? 'bg-green-400' :
-              'bg-yellow-400'
-            }`}></div>
-            <span>
-              {(activeTab === 'explain' && deepExplain) ? 'Online Processing' : 
-               (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) || (activeTab === 'explain' && apiSupport.prompt || (activeTab === 'chat' && apiSupport.chatbot)) ? 'Chrome API' :
-               'Fallback Mode'}
-            </span>
+      <div className="fixed bottom-0 left-0 right-0 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-600 z-40">
+        <div className="p-4">
+          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex items-center space-x-1">
+              <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${
+                (activeTab === 'explain' && deepExplain) ? 'bg-blue-400' : 
+                (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) || (activeTab === 'explain' && apiSupport.prompt || (activeTab === 'chat' && apiSupport.chatbot)) ? 'bg-green-400' :
+                'bg-yellow-400'
+              }`}></div>
+              <span>
+                {(activeTab === 'explain' && deepExplain) ? 'Online Processing' : 
+                (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) || (activeTab === 'explain' && apiSupport.prompt || (activeTab === 'chat' && apiSupport.chatbot)) ? ' Chrome API' :
+                ' Fallback Mode'}
+              </span>
+              <span>
+                {(activeTab === 'explain' && deepExplain) ? '• Privacy Concerned' : '• Privacy Protected'}
+              </span>
+            </div>
+
+            {/* Dark Mode Toggle */}
+            <div className="flex justify-center gap-2">
+              <button
+                // onClick={toggleDarkMode}
+                aria-label="Toggle dark mode"
+              >
+                {isDarkMode ? (
+                  <svg className="w-4 h-4 text-gray-700 hover:cursor-pointer hover:text-yellow-500 transition-all" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 text-gray-700  hover:cursor-pointer hover:text-purple-600 transition-all" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                  </svg>
+                )}
+              </button>
+              <button
+                onClick={openSettings}
+                aria-label="Open settings"
+              >
+                <Settings className='w-4 h-4 text-gray-700 hover:cursor-pointer hover:text-gray-300 transition-all'/>
+              </button>
+            </div>
           </div>
-          <span>
-            {(activeTab === 'explain' && deepExplain) ? 'Privacy Concerned' : 'Privacy Protected'}
-          </span>
         </div>
       </div>
 
@@ -1106,5 +1161,4 @@ const SidePanel = () => {
   );
 };
 
-// Mount sidepanel
 ReactDOM.createRoot(document.getElementById('root')).render(<SidePanel />)
