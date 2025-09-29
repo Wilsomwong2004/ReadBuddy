@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import { Settings } from 'lucide-react';
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
 import './index.css';
 
 const SidePanel = () => {
@@ -44,6 +47,21 @@ const SidePanel = () => {
       endOfMessagesRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatHistory, isStreaming]);
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDFsuec0hFEf8OqVgf9GjhZWdtD5fxe1-0",
+    authDomain: "readbuddy-6f546.firebaseapp.com",
+    projectId: "readbuddy-6f546",
+    storageBucket: "readbuddy-6f546.firebasestorage.app",
+    messagingSenderId: "247214116217",
+    appId: "1:247214116217:web:66f4296f937edd8edeb3a8",
+    measurementId: "G-48QG1VLXV9"
+  };
+
+  const firebase = initializeApp(firebaseConfig);
+  // const analytics = getAnalytics(firebase);
+  const gemini_ai = getAI(firebase, { backend: new GoogleAIBackend() });
+  const gemini_model = getGenerativeModel(gemini_ai, { model: "gemini-2.5-flash", mode: InferenceMode.PREFER_IN_CLOUD });
 
   const checkAPISupport = async () => {
     let support = {
@@ -295,7 +313,7 @@ const SidePanel = () => {
         }
       });
 
-      let summary = await summarizer.summarize(text);
+      let summary = await summarizer.summarize(text, { outputLanguage: "en" });
       summarizer.destroy();
       
       if (summaryMode === 'bullets' && !summary.includes('•') && !summary.includes('-')) {
@@ -414,41 +432,57 @@ const SidePanel = () => {
 
   const explainText = async (text, useDeepExplain) => {    
     if (useDeepExplain) {
-      return '🌐 **Deep Explanation (Online Model):**\n\nThis concept encompasses multiple dimensions and can be understood through various theoretical frameworks. The underlying principles involve:\n\n• **Historical Context**: Understanding how this concept developed over time\n• **Technical Implementation**: The practical aspects and mechanisms involved\n• **Real-world Applications**: How this applies in various scenarios and industries\n• **Related Concepts**: Connections to other important ideas and theories\n• **Future Implications**: Potential developments and considerations going forward\n\n*Note: This explanation uses online processing for comprehensive analysis.*';
-      } else {
-        if (!apiSupport.prompt) {
-          throw new Error('❌ Prompt API not available for explanation generation');
-        }
+      const prompt = `
+        As a professional research assistant, please provide an in-depth analysis:
 
-        const prompt = `
-        Provide a detailed yet easy-to-understand explanation based on the following summary. 
-        - Start with a brief overview of the main idea.  
-        - Then explain the key points in detail, including background context, reasoning, and potential implications.  
-        - Highlight the author's perspective if present.  
-        - Use clear, concise sentences that are suitable for a general audience.  
-        - Structure the response in paragraphs for readability.
+        Text: "${text}"
 
-        Summary:
+        Please provide:
+        1. Core Insight - A paragraph summarizing the most important findings
+        2. Context - Detailed historical/academic background
+        3. Key Concept - Explanation of technical terms and complex concepts
+        4. Modern Relevance - Connections to current trends or issues
+        5. Resource Guide - Recommendations to authoritative learning resources (please provide authentic references and URL links)
+
+        Emphasis on accuracy and depth, suitable for professional readers.
+    `;
+
+      const result = await gemini_model.generateContent(prompt);
+      const responseText = await result.response.text();
+      
+      return responseText;
+    } else {
+      if (!apiSupport.prompt) {
+        throw new Error('❌ Prompt API not available for explanation generation');
+      }
+
+      const prompt = `
+        Please explain the following in simple, clear language:
+
         "${text}"
 
-        Format:
-        **Overview:** ...
-        **Detailed Explanation:** ...
-        **Implications/Author's View:** ...
-        `;
+        Please include:
+        1. Overview of core content
+        2. Background and context analysis
+        3. Detailed explanation of key points
+        4. Relevant impact or significance
+        5. Suggested directions for further study
 
-        const session = await LanguageModel.create({
-          monitor(m) {
-            m.addEventListener("downloadprogress", (e) => {
-              console.log(`Downloaded explanation language model: ${e.loaded * 100}%`);
-            });
-          },
-        });
+        Use a friendly, understandable tone, as if you were explaining something to a friend.
+      `;
 
-        const explanation = await session.prompt(prompt);
+      const session = await LanguageModel.create({
+        monitor(m) {
+          m.addEventListener("downloadprogress", (e) => {
+            console.log(`Downloaded explanation language model: ${e.loaded * 100}%`);
+          });
+        },
+      });
 
-        return `**Detailed Explanation:**\n${explanation}`;
-      }
+      const explanation = await session.prompt(prompt);
+
+       return explanation;
+    }
   };
 
   const chatbotText = async (text, isNewConversation = false) => {
@@ -726,22 +760,17 @@ const SidePanel = () => {
       case 'chat':
         return (
           <div className="flex flex-col h-[600px] overflow-y-hidden space-y-4">
-            <div className="flex items-center justify-between bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900 dark:to-pink-900 p-3 rounded-lg border border-purple-200 dark:border-purple-700">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-purple-100 dark:bg-purple-800 rounded-full flex items-center justify-center">
-                  <span className="text-purple-600 dark:text-purple-300">🤖</span>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-white text-sm">AI Assistant</p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    {apiSupport.chatbot ? 'Ready to chat' : 'Chatbot unavailable'}
-                  </p>
-                </div>
-              </div>
+            <div className="flex items-center justify-between rounded-lg">
+              <h3 className="font-medium text-gray-900 dark:text-white flex items-center space-x-2">
+                <span>Readbuddy AI Assistant</span>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  {apiSupport.chatbot ? 'Ready to chat' : 'Chatbot unavailable'}
+                </p>
+              </h3>
               {chatHistory.length > 0 && (
                 <button
                   onClick={clearChatHistory}
-                  className="text-xs text-purple-600 dark:text-purple-300 hover:text-purple-800 dark:hover:text-purple-400 px-2 py-1 rounded hover:bg-purple-100 dark:hover:bg-purple-800 transition-colors"
+                  className="text-xs text-purple-600 dark:text-purple-300 hover:text-purple-800 dark:hover:text-purple-400 px-2 py-1 rounded transition-colors"
                 >
                   Clear
                 </button>
