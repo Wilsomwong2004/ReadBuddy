@@ -29,3 +29,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   console.log("Background got message:", msg);
 });
 
+// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+//   if (message.type === 'OPEN_SIDEBAR') {
+//     chrome.runtime.sendMessage({ type: 'SHOW_SIDEBAR', ...message });
+//   }
+// });
+

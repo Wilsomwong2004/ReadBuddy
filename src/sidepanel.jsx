@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import { Settings } from 'lucide-react';
+import { Settings, Save } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
@@ -23,7 +23,20 @@ const SidePanel = () => {
   const [chatHistory, setChatHistory] = useState([]);
   const [currentMessage, setCurrentMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [relatedConcepts, setRelatedConcepts] = useState("");
+  const [loadingRelated, setLoadingRelated] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [deepThinkEnabled, setDeepThinkEnabled] = useState(false);
+  const [activePanel, setActivePanel] = useState(null);
+  const [showSavedMsg, setShowSavedMsg] = useState(false);
+
+  const [addCategories, setAddCategories] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [newCategory, setNewCategory] = useState("");
+  const [addTitle, setAddTitle] = useState(false);
+  const [title, setTitle] = useState("");
+  const [savedData, setSavedData] = useState(null);
+
   const [apiSupport, setApiSupport] = useState({
     summarizer: false,
     translator: false,
@@ -36,8 +49,28 @@ const SidePanel = () => {
     checkAPISupport();
   }, []);
 
+  const handleSave = () => {
+    setActivePanel("save");
+  };
+
+  const confirmSave = () => {
+    const data = {
+      categories,
+      title: addTitle ? title : null,
+    };
+    setSavedData(data);
+    setShowSavedMsg(true);
+
+    setTimeout(() => setShowSavedMsg(false), 2000);
+  };
+
   const openSettings = () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('settings.html') });
+    window.close();
+  };
+
+  const openSave = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('save.html') });
     window.close();
   };
 
@@ -481,7 +514,7 @@ const SidePanel = () => {
 
       const explanation = await session.prompt(prompt);
 
-       return explanation;
+      return explanation;
     }
   };
 
@@ -497,21 +530,57 @@ const SidePanel = () => {
     setIsStreaming(true);
     
     try {
-      const chatbot = await LanguageModel.create({
-        monitor(m) {
-          m.addEventListener('downloadprogress', (e) => {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            console.log(`Downloading chatbot model: ${percent}%`);
-          });
+      const needCloudMixing = (
+        text.toLowerCase().includes('latest') ||
+        text.includes('2024') ||
+        text.includes('2025') ||
+        text.toLowerCase().includes('currently') ||
+        text.toLowerCase().includes('realtime') ||
+        text.toLowerCase().includes('forecast') ||
+        text.toLowerCase().includes('prediction') ||
+        text.toLowerCase().includes('trend')
+      );
+
+      let useOnlineModel = false;
+
+      if (needCloudMixing && !deepThinkEnabled) {
+        const approve = window.confirm("⚡ This question may require the online model for accurate and real-time info. Do you want to switch to online mode?");
+        if (approve) {
+          useOnlineModel = true;
         }
-      });
+      } else if (deepThinkEnabled) {
+        useOnlineModel = true;
+      }
+
+      let chatbot;
+      let sourceTag;
+
+      if (useOnlineModel) {
+        chatbot = {
+          async prompt(text) {
+            const result = await gemini_model.generateContent(text);
+            return result.response.text();
+          }
+        };
+        sourceTag = "online";
+      } else {
+        chatbot = await LanguageModel.create({
+          monitor(m) {
+            m.addEventListener('downloadprogress', (e) => {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              console.log(`Downloading local chatbot model: ${percent}%`);
+            });
+          }
+        });
+        sourceTag = "local";
+      }
 
       const userMessage = { type: 'user', content: text, timestamp: Date.now() };
       setChatHistory(prev => [...prev, userMessage]);
 
       const response = await chatbot.prompt(text);
 
-      const botMessage = { type: 'bot', content: response, timestamp: Date.now() };
+      const botMessage = { type: 'bot', content: response, source: sourceTag, timestamp: Date.now() };
       setChatHistory(prev => [...prev, botMessage]);
 
       return response;
@@ -544,6 +613,182 @@ const SidePanel = () => {
     setCurrentMessage('');
   };
 
+  const generateRelatedConcepts = async (text) => {
+    if (!apiSupport.prompt) {
+      throw new Error('❌ Prompt API not available for explanation generation');
+    }
+
+    const prompt = `
+      Extract 3-5 core concepts from the following text and provide a brief explanation of each concept:
+
+      Text: "${text}"
+
+      Format:
+
+      Concept 1: Short Definition → Related Aspect 1 → Related Aspect 2
+
+      Concept 2: Short Definition → Related Aspect 1 → Related Aspect 2
+
+      Keep it concise; each concept should have no more than three related aspects.
+      no need add **bold** or *italic* text. also no need say here are 5 core concepts.
+      directly start from concept 1 to concept 5 and each conecpt have gap space.
+    `;
+
+    const session = await LanguageModel.create({
+      monitor(m) {
+        m.addEventListener("downloadprogress", (e) => {
+          console.log(`Downloaded Prompts language model: ${e.loaded * 100}%`);
+        });
+      },
+    });
+
+    const response = await session.prompt(prompt);
+    const output = typeof response === "string" ? response : response.output?.[0]?.content?.[0]?.text || "";
+
+    return output.trim();
+  }
+
+  const performQuickAnalysis = (text) => {
+    if (!text || text.trim() === "") {
+      return {
+        charCount: 0,
+        sentenceCount: 0,
+        paragraphCount: 0,
+        readingTime: 0,
+        textType: "Unknown",
+        entities: [],
+        difficulty: "N/A"
+      };
+    }
+
+    // Basic counts
+    const charCount = text.length;
+    const words = text.trim().split(/\s+/).filter(word => word.length > 0);
+    const wordCount = words.length;
+    
+    // Sentence count (split by .!? followed by space or end of string)
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const sentenceCount = sentences.length;
+    
+    // Paragraph count (split by double newlines or single newlines)
+    const paragraphs = text.split(/\n\n+|\n/).filter(p => p.trim().length > 0);
+    const paragraphCount = paragraphs.length;
+    
+    // Reading time (average 200-250 words per minute)
+    const readingTime = Math.ceil(wordCount / 225);
+
+    // Text type detection
+    const textType = detectTextType(text, wordCount);
+
+    // Entity extraction (simple version - looks for capitalized words)
+    const entities = extractEntities(text);
+
+    // Difficulty assessment
+    const difficulty = assessDifficulty(text, wordCount, sentenceCount);
+
+    return {
+      charCount,
+      wordCount,
+      sentenceCount,
+      paragraphCount,
+      readingTime,
+      textType,
+      entities,
+      difficulty
+    };
+  };
+
+  const detectTextType = (text, wordCount) => {
+    const lowerText = text.toLowerCase();
+    
+    // Check for code patterns
+    if (/function|const|let|var|class|import|export|return/.test(text) || 
+        /[{}();]/.test(text) && text.split('\n').length > 3) {
+      return "Code/Technical";
+    }
+    
+    // Check for academic/formal writing
+    if (/therefore|however|furthermore|moreover|consequently|thus|hence/.test(lowerText)) {
+      return "Academic/Formal";
+    }
+    
+    // Check for narrative/story
+    if (/once upon|suddenly|finally|meanwhile|story|chapter/.test(lowerText)) {
+      return "Narrative/Story";
+    }
+    
+    // Check for instructional
+    if (/step|first|second|how to|tutorial|guide|instructions/.test(lowerText)) {
+      return "Instructional";
+    }
+    
+    // Check for conversational
+    if (/\?|\!|hey|wow|cool|awesome|i think|i feel/.test(lowerText)) {
+      return "Conversational";
+    }
+    
+    // Default
+    return wordCount < 50 ? "Short note" : "General text";
+  };
+
+  const extractEntities = (text) => {
+    // Find capitalized words (potential proper nouns/entities)
+    const words = text.split(/\s+/);
+    const entities = new Set();
+    
+    words.forEach((word, index) => {
+      // Remove punctuation
+      const cleanWord = word.replace(/[.,!?;:()""']/g, '');
+      
+      // Check if word starts with capital letter and is not at sentence start
+      if (/^[A-Z][a-z]+/.test(cleanWord) && cleanWord.length > 2) {
+        // Skip common words that might be capitalized
+        const commonWords = ['The', 'A', 'An', 'This', 'That', 'These', 'Those', 'I'];
+        if (!commonWords.includes(cleanWord)) {
+          entities.add(cleanWord);
+        }
+      }
+    });
+    
+    // Return top 5 most frequent entities
+    return Array.from(entities).slice(0, 5);
+  };
+
+  const assessDifficulty = (text, wordCount, sentenceCount) => {
+    if (wordCount === 0 || sentenceCount === 0) return "N/A";
+    
+    // Calculate average words per sentence
+    const avgWordsPerSentence = wordCount / sentenceCount;
+    
+    // Count complex words (3+ syllables - simplified estimation)
+    const words = text.split(/\s+/);
+    const complexWords = words.filter(word => estimateSyllables(word) >= 3).length;
+    const complexWordRatio = complexWords / wordCount;
+    
+    // Simple difficulty scoring
+    let score = 0;
+    
+    if (avgWordsPerSentence > 20) score += 2;
+    else if (avgWordsPerSentence > 15) score += 1;
+    
+    if (complexWordRatio > 0.2) score += 2;
+    else if (complexWordRatio > 0.1) score += 1;
+    
+    // Return difficulty level
+    if (score >= 3) return "Advanced";
+    if (score >= 2) return "Intermediate";
+    return "Basic";
+  };
+
+  const estimateSyllables = (word) => {
+    word = word.toLowerCase().replace(/[^a-z]/g, '');
+    if (word.length <= 3) return 1;
+    
+    // Simple syllable estimation
+    const vowels = word.match(/[aeiouy]+/g);
+    return vowels ? vowels.length : 1;
+  };
+
   const processText = async (action, text) => {
     if (!text.trim()) {
       setResult('Please enter or select some text to process.');
@@ -555,6 +800,13 @@ const SidePanel = () => {
     
     try {
       let processedResult = '';
+
+      try {
+        const concepts = await generateRelatedConcepts(selectedText || text);
+        setRelatedConcepts(concepts);
+      } catch (err) {
+        setRelatedConcepts("❌ Failed to generate related concepts.");
+      }
       
       switch (action) {
         case 'summarize':
@@ -637,13 +889,13 @@ const SidePanel = () => {
       case 'explain':
         return (
           <div className="space-y-4">
-            <div className="bg-gradient-to-r from-amber-50 dark:from-amber-800 to-orange-50 dark:to-yellow-700 p-4 rounded-lg border border-amber-200 dark:border-amber-700">
+            <div className="bg-gray-50 hover:bg-gray-100 transition-colors duration-200 p-4 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-800">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="flex-shrink-0">
                     <div
                       className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-300 ${
-                        deepExplain ? 'bg-amber-500 dark:bg-amber-700' : 'bg-gray-300 dark:bg-gray-600'
+                        deepExplain ? 'bg-amber-500' : 'bg-gray-300'
                       }`}
                     >
                       {deepExplain ? '🌐' : '💎'}
@@ -654,7 +906,7 @@ const SidePanel = () => {
                       {deepExplain ? 'Deep Explanation' : 'Quick Explanation'}
                     </p>
                     <p className="text-xs text-gray-600 dark:text-gray-300">
-                      {deepExplain ? 'Online Model - Comprehensive analysis' : 'Local Processing - Fast explanation'}
+                      {deepExplain ? 'Online - Comprehensive analysis' : 'Local - Fast explanation'}
                     </p>
                   </div>
                 </div>
@@ -759,7 +1011,7 @@ const SidePanel = () => {
       
       case 'chat':
         return (
-          <div className="flex flex-col h-[600px] overflow-y-hidden space-y-4">
+          <div className="flex flex-col h-[668px] overflow-y-hidden space-y-4">
             <div className="flex items-center justify-between rounded-lg">
               <h3 className="font-medium text-gray-900 dark:text-white flex items-center space-x-2">
                 <span>Readbuddy AI Assistant</span>
@@ -801,15 +1053,30 @@ const SidePanel = () => {
                         }`}
                       >
                         <p className="text-sm whitespace-pre-line">{message.content}</p>
-                        <p
-                          className={`text-xs mt-1 ${
-                            message.type === 'user'
-                              ? 'text-purple-100'
-                              : 'text-gray-500 dark:text-gray-400'
-                          }`}
-                        >
-                          {new Date(message.timestamp).toLocaleTimeString()}
-                        </p>
+
+                        {message.type === 'user' && ( 
+                          <p
+                            className={`text-xs mt-1 ${
+                              message.type === 'user'
+                                ? 'text-purple-100'
+                                : 'text-gray-500 dark:text-gray-400'
+                            }`}
+                          >
+                            {new Date(message.timestamp).toLocaleTimeString()}
+                          </p>
+                        )}
+
+                        {message.type !== 'user' && ( 
+                          <p
+                            className={`text-xs mt-1 ${
+                              message.type === 'user'
+                                ? 'text-purple-100'
+                                : 'text-gray-500 dark:text-gray-400'
+                            }`}
+                          >
+                            {new Date(message.timestamp).toLocaleTimeString()} · {message.source || "local"}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -843,14 +1110,14 @@ const SidePanel = () => {
             </div>
 
             <div className="space-y-2">
-              <div className="flex space-x-2">
+              <div className="flex space-x-2 overflow-x-auto">
                 {selectedText.trim() && (
                   <button
                     onClick={() => setCurrentMessage(selectedText.trim())}
                     className="px-3 py-2 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs rounded-md hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors flex items-center space-x-1"
                   >
                     <span>📄</span>
-                    <span>Paste Selected Text</span>
+                    <span>Paste Text</span>
                   </button>
                 )}
 
@@ -860,6 +1127,18 @@ const SidePanel = () => {
                 >
                   <span>📖</span>
                   <span>Read Page</span>
+                </button>
+
+                <button
+                  onClick={() => setDeepThinkEnabled(!deepThinkEnabled)}
+                  className={`px-3 py-2 text-xs rounded-md flex items-center space-x-1 transition-colors ${
+                    deepThinkEnabled
+                      ? 'bg-purple-500 text-white hover:bg-purple-600'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  <span>🧠</span>
+                  <span>DeepThink</span>
                 </button>
               </div>
 
@@ -930,7 +1209,7 @@ const SidePanel = () => {
         </div>
       )}
 
-      <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+      <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 fixed top-0 left-0 right-0 z-50">
         <div className="relative grid grid-cols-4 gap-0.5 bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
           <div 
             className="absolute top-1 bottom-1 bg-white dark:bg-gray-800 rounded-md shadow-sm transition-all duration-300 ease-out"
@@ -943,7 +1222,10 @@ const SidePanel = () => {
           {tabs.map((tab, index) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setActivePanel(null);
+              }}
               className={`relative flex flex-col items-center py-2 px-1 rounded-md text-xs font-medium transition-all duration-300 transform hover:scale-105 ${
                 activeTab === tab.id 
                   ? 'text-gray-900 dark:text-white z-10' 
@@ -962,7 +1244,7 @@ const SidePanel = () => {
       </div>
 
       {/* Animated Content */}
-      <div className="flex-1 p-4 overflow-y-auto bg-white dark:bg-gray-900">
+      <div className="flex-1 pt-25 p-4 overflow-y-auto bg-white dark:bg-gray-900">
         {activeTab !== 'chat' && (
           <div className="mb-4 relative">
             <h3 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center space-x-2">
@@ -976,7 +1258,7 @@ const SidePanel = () => {
               {['summarize', 'translate', 'explain'].includes(activeTab) && !selectedText.trim() && (
                 <button
                   onClick={extractPageContent}
-                  className="absolute top-[-1.5] right-2 px-3 py-1 bg-blue-500 text-white text-xs rounded-md hover:bg-blue-600 transition-colors"
+                  className="absolute top-[-3.5] right-2 px-3 py-1 bg-blue-500 text-white text-xs rounded-md hover:bg-blue-600 transition-colors"
                 >
                   Extract Page Content
                 </button>
@@ -994,7 +1276,7 @@ const SidePanel = () => {
           </div>
         )}
 
-        <div className="mb-6 min-h-auto">
+        <div className="min-h-auto">
           <div key={activeTab} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             {renderTabContent()}
           </div>
@@ -1005,7 +1287,7 @@ const SidePanel = () => {
           <button
             onClick={() => processText(activeTab, selectedText)}
             disabled={isLoading || !selectedText.trim()}
-            className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none ${
+            className={`w-full mt-4 py-3 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none ${
               activeTab === 'summarize' ? 'bg-blue-500 hover:bg-blue-600' :
               activeTab === 'translate' ? 'bg-green-500 hover:bg-green-600' :
               'bg-amber-500 hover:bg-amber-600'
@@ -1031,6 +1313,188 @@ const SidePanel = () => {
                 {result}
               </div>
             </div>
+              <div className="flex items-center gap-2 mt-3">
+                {(activeTab === 'summarize' || activeTab === 'explain') && (
+                  <>
+                  <button 
+                    onClick={() => setActivePanel(activePanel === "analysis" ? null : "analysis")}
+                    className="px-3 py-1 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded-md hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                  >
+                    📊 Concise analysis
+                  </button>
+                  <button 
+                    onClick={() => setActivePanel(activePanel === "related" ? null : "related")}
+                    className="px-3 py-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 rounded-md hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
+                  >
+                    🔗 Related topic
+                  </button>
+                </>
+                )}
+                <button 
+                  onClick={() => setActivePanel(activePanel === "save" ? null : "save")}
+                  className="px-3 py-1 text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 rounded-md hover:bg-green-200 dark:hover:bg-green-800 transition-colors"
+                >
+                  💾 Save
+                </button>
+              </div>
+
+              {activePanel === "analysis" && (
+                <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
+                  <h3 className="font-semibold text-lg mb-2 text-black dark:text-white">📊 Text Analysis Report</h3>
+                  
+                  {(() => {
+                    const analysis = performQuickAnalysis(selectedText);
+
+                    return (
+                      <>
+                        <p className="text-sm text-black dark:text-white">📝 <b>Basic Info</b></p>
+                        <ul className="text-sm ml-4 list-disc text-black dark:text-white">
+                          <li>Characters: {analysis.charCount}</li>
+                          <li>Sentences: {analysis.sentenceCount}</li>
+                          <li>Paragraphs: {analysis.paragraphCount}</li>
+                          <li>Reading time: ~{analysis.readingTime} min</li>
+                        </ul>
+
+                        <p className="text-sm mt-2 text-black dark:text-white">🎯 <b>Content Features</b></p>
+                        <ul className="text-sm ml-4 list-disc text-black dark:text-white">
+                          <li>Text type: {analysis.textType}</li>
+                          <li>Style: Formal / Informal</li>
+                          <li>Key entities: {analysis.entities.join(", ") || "None detected"}</li>
+                        </ul>
+
+                        <p className="text-sm mt-2 text-black dark:text-white">🔍 <b>Reading Suggestion</b></p>
+                        <ul className="text-sm ml-4 list-disc text-black dark:text-white">
+                          <li>Audience: Students / General readers</li>
+                          <li>Difficulty: {analysis.difficulty}</li>
+                          <li>Focus: 根据分类结果提示</li>
+                        </ul>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+                {activePanel === "save" && (
+                  <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
+                    <p className="font-semibold text-lg mb-2 text-black dark:text-white">💾 Save to Knowledge Base</p>
+
+                    <label className="block text-sm mb-1 text-black dark:text-white">
+                      <input
+                        type="checkbox"
+                        checked={addCategories}
+                        onChange={(e) => setAddCategories(e.target.checked)}
+                        className="mr-2"
+                      />
+                      Add tags/topics/categories
+                    </label>
+
+                    {addCategories && (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={newCategory}
+                            onChange={(e) => setNewCategory(e.target.value)}
+                            placeholder="Enter a tag..."
+                            className="flex-1 px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white"
+                          />
+                          <button
+                            onClick={() => {
+                              if (newCategory.trim()) {
+                                setCategories([...categories, newCategory.trim()]);
+                                setNewCategory("");
+                              }
+                            }}
+                            className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {categories.map((cat, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-1 text-xs bg-gray-300 dark:bg-gray-700 text-black dark:text-white rounded-full"
+                            >
+                              {cat}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <label className="block text-sm mt-3 mb-1 text-black dark:text-white">
+                      <input
+                        type="checkbox"
+                        checked={addTitle}
+                        onChange={(e) => setAddTitle(e.target.checked)}
+                        className="mr-2"
+                      />
+                      Add note (title)
+                    </label>
+
+                    {addTitle && (
+                      <input
+                        type="text"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        placeholder="Enter a title..."
+                        className="w-full px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white mb-2"
+                      />
+                    )}
+
+                    <div className="flex gap-2 mt-4">
+                      <button
+                        onClick={confirmSave}
+                        className="px-3 py-1 text-xs bg-green-600 text-white rounded-md hover:bg-green-700"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setActivePanel(null)}
+                        className="px-3 py-1 text-xs bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-400 dark:hover:bg-gray-500"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    {showSavedMsg && (
+                      <div className="mt-2 text-green-600 dark:text-green-400 text-sm">
+                        ✅ Saved successfully!
+                      </div>
+                    )}
+
+                    {savedData && (
+                      <div className="mt-3 text-sm text-black dark:text-white">
+                        <p><b>Title:</b> {savedData.title || "None"}</p>
+                        <p><b>Categories:</b> {savedData.categories.length > 0 ? savedData.categories.join(", ") : "None"}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activePanel === "related" && (
+                  <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
+                    <h3 className="font-semibold text-lg mb-2 text-black dark:text-white">🔗 Related Concept Network</h3>
+
+                    {loadingRelated ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-300">⏳ Generating related concepts...</p>
+                    ) : (
+                      <div className="text-sm text-black dark:text-white whitespace-pre-line leading-relaxed">
+                        {relatedConcepts || "No related concepts available."}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 mt-6 text-black dark:text-white">
+                      <button className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                        Explore More
+                      </button>
+                      <button className="px-3 py-1 text-xs bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                        Add to Learning Path
+                      </button>
+                    </div>
+                  </div>
+                )}
           </div>
         )}
       </div>
@@ -1070,6 +1534,12 @@ const SidePanel = () => {
                     <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
                   </svg>
                 )}
+              </button>
+              <button
+                onClick={openSave}
+                aria-label="Open save"
+              >
+                <Save className='w-4 h-4 text-gray-700 hover:cursor-pointer hover:text-green-600 transition-all'/>
               </button>
               <button
                 onClick={openSettings}
