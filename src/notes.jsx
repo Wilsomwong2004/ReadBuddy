@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { BookmarkIcon, SearchIcon, BookOpen, Home, Clock, Star, Settings, Menu, X, Trash2, ExternalLink } from 'lucide-react';
 
-const SavePage = () => {
+const ReadBuddyNotesPage = () => {
   const [activeTab, setActiveTab] = useState('saved');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -194,4 +194,4 @@ const SavePage = () => {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<SavePage  />);
+ReactDOM.createRoot(document.getElementById('root')).render(<ReadBuddyNotesPage  />);
