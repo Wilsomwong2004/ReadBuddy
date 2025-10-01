@@ -1,5 +1,5 @@
 export default {
-   darkMode: ["class"],
+  darkMode: ["class"],
   content: [
     './index.html',
     './popup.html',

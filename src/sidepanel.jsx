@@ -70,7 +70,7 @@ const SidePanel = () => {
   };
 
   const openSave = () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('save.html') });
+    chrome.tabs.create({ url: chrome.runtime.getURL('notes.html') });
     window.close();
   };
 

@@ -11,6 +11,7 @@ export default defineConfig({
         popup: resolve(__dirname, 'popup.html'),
         sidepanel: resolve(__dirname, 'sidepanel.html'),
         settings: resolve(__dirname,'settings.html'),
+        notes: resolve(__dirname, 'notes.html'),
         content: resolve(__dirname, 'src/content.js'),
         background: resolve(__dirname, 'src/background.js')
       },
