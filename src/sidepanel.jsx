@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, use } from 'react';
 import ReactDOM from 'react-dom/client';
 import { Settings, Save } from 'lucide-react';
 import { initializeApp } from "firebase/app";
@@ -30,11 +30,11 @@ const SidePanel = () => {
   const [activePanel, setActivePanel] = useState(null);
   const [showSavedMsg, setShowSavedMsg] = useState(false);
 
-  const [addCategories, setAddCategories] = useState(false);
+  const[favorite, setFavorite] = useState(false);
   const [categories, setCategories] = useState([]);
   const [newCategory, setNewCategory] = useState("");
-  const [addTitle, setAddTitle] = useState(false);
   const [title, setTitle] = useState("");
+  const [selectedNoteSpace, setSelectedNoteSpace] = useState(null);
   const [savedData, setSavedData] = useState(null);
 
   const [apiSupport, setApiSupport] = useState({
@@ -45,22 +45,83 @@ const SidePanel = () => {
     chatbot: false
   });
 
+  let noteSpaces = []; 
+
   useEffect(() => {
     checkAPISupport();
   }, []);
 
-  const handleSave = () => {
-    setActivePanel("save");
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.get(['darkMode'], (result) => {
+        const savedDarkMode = result.darkMode === true;
+        console.log('Loaded dark mode:', savedDarkMode);
+        
+        setIsDarkMode(savedDarkMode);
+        
+        if (savedDarkMode) {
+          document.documentElement.classList.add('dark');
+          document.body.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+          document.body.classList.remove('dark');
+        }
+      });
+    }
+  }, []);
+
+  // const handleSave = () => {
+  //   setActivePanel("save");
+  // };
+
+  const toggleDarkMode = () => {
+    const newDarkMode = !isDarkMode;
+    console.log('Toggling dark mode:', newDarkMode);
+    
+    setIsDarkMode(newDarkMode);
+    
+    if (newDarkMode) {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
+    
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.set({ darkMode: newDarkMode }, () => {
+        console.log('Dark mode saved:', newDarkMode);
+      });
+    }
   };
 
   const confirmSave = () => {
-    const data = {
-      categories,
-      title: addTitle ? title : null,
-    };
-    setSavedData(data);
-    setShowSavedMsg(true);
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      const currentTab = tabs[0]; 
+      const url = currentTab.url;
+      const savedItem = {
+        id: Date.now(),
+        title: title.trim(),
+        text: selectedText,
+        result: result,
+        url: url,
+        noteSpace: selectedNoteSpace,
+        tags: categories,
+        favorite: favorite,
+        category: activeTab,
+        date: new Date().toISOString().split('T')[0]
+      };
 
+      chrome.storage.local.get(['savedItems'], function(data) {
+        const savedItems = data.savedItems || [];
+        savedItems.push(savedItem);
+        chrome.storage.local.set({savedItems: savedItems}, function() {
+          setShowSavedMsg(true);
+        });
+      });
+    });
+
+    setSavedData(null); 
     setTimeout(() => setShowSavedMsg(false), 2000);
   };
 
@@ -1378,75 +1439,105 @@ const SidePanel = () => {
                   <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
                     <p className="font-semibold text-lg mb-2 text-black dark:text-white">💾 Save to Knowledge Base</p>
 
+                    {/* Title */}
                     <label className="block text-sm mb-1 text-black dark:text-white">
-                      <input
-                        type="checkbox"
-                        checked={addCategories}
-                        onChange={(e) => setAddCategories(e.target.checked)}
-                        className="mr-2"
-                      />
-                      Add tags/topics/categories
+                      Title <span className="text-red-500">*</span>
                     </label>
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Enter a title..."
+                      className="w-full px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white mb-3"
+                    />
 
-                    {addCategories && (
-                      <div className="mt-2 flex flex-col gap-2">
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={newCategory}
-                            onChange={(e) => setNewCategory(e.target.value)}
-                            placeholder="Enter a tag..."
-                            className="flex-1 px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white"
-                          />
-                          <button
-                            onClick={() => {
-                              if (newCategory.trim()) {
-                                setCategories([...categories, newCategory.trim()]);
-                                setNewCategory("");
-                              }
-                            }}
-                            className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                          >
-                            Add
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {categories.map((cat, idx) => (
-                            <span
-                              key={idx}
-                              className="px-2 py-1 text-xs bg-gray-300 dark:bg-gray-700 text-black dark:text-white rounded-full"
-                            >
-                              {cat}
-                            </span>
-                          ))}
-                        </div>
+                    {/* NoteSpace */}
+                    <label className="block text-sm mb-1 text-black dark:text-white">
+                      NoteSpace <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex gap-2 mb-3">
+                      <select
+                        value={selectedNoteSpace}
+                        onChange={(e) => setSelectedNoteSpace(e.target.value)}
+                        className="flex-1 px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white"
+                      >
+                        <option value="">-- Select a NoteSpace --</option>
+                        {noteSpaces.map((space, idx) => (
+                          <option key={idx} value={space}>{space}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          const newSpace = prompt("Enter new NoteSpace name:");
+                          if (newSpace && !noteSpaces.includes(newSpace)) {
+                            setNoteSpaces([...noteSpaces, newSpace]);
+                            setSelectedNoteSpace(newSpace);
+                          }
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                      >
+                        + Create
+                      </button>
+                    </div>
+
+                    {/* Tags (optional) */}
+                    <label className="block text-sm mb-1 text-black dark:text-white">
+                      Tags (optional)
+                    </label>
+                    <div className="mt-2 flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newCategory}
+                          onChange={(e) => setNewCategory(e.target.value)}
+                          placeholder="Enter a tag..."
+                          className="flex-1 px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white"
+                        />
+                        <button
+                          onClick={() => {
+                            if (newCategory.trim()) {
+                              setCategories([...categories, newCategory.trim()]);
+                              setNewCategory("");
+                            }
+                          }}
+                          className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        >
+                          Add
+                        </button>
                       </div>
-                    )}
+                      <div className="flex flex-wrap gap-2">
+                        {categories.map((cat, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-1 text-xs bg-gray-300 dark:bg-gray-700 text-black dark:text-white rounded-full"
+                          >
+                            {cat}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
 
+                    {/* Favorite */}
                     <label className="block text-sm mt-3 mb-1 text-black dark:text-white">
                       <input
                         type="checkbox"
-                        checked={addTitle}
-                        onChange={(e) => setAddTitle(e.target.checked)}
+                        checked={favorite}
+                        onChange={(e) => setFavorite(e.target.checked)}
                         className="mr-2"
                       />
-                      Add note (title)
+                      Mark as Favorite
                     </label>
 
-                    {addTitle && (
-                      <input
-                        type="text"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="Enter a title..."
-                        className="w-full px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white mb-2"
-                      />
-                    )}
-
+                    {/* Save / Cancel */}
                     <div className="flex gap-2 mt-4">
                       <button
                         onClick={confirmSave}
-                        className="px-3 py-1 text-xs bg-green-600 text-white rounded-md hover:bg-green-700"
+                        disabled={!title.trim() || !selectedNoteSpace}
+                        className={`px-3 py-1 text-xs rounded-md text-white ${
+                          !title.trim() || !selectedNoteSpace
+                            ? "bg-gray-400 cursor-not-allowed"
+                            : "bg-green-600 hover:bg-green-700"
+                        }`}
                       >
                         Save
                       </button>
@@ -1461,13 +1552,6 @@ const SidePanel = () => {
                     {showSavedMsg && (
                       <div className="mt-2 text-green-600 dark:text-green-400 text-sm">
                         ✅ Saved successfully!
-                      </div>
-                    )}
-
-                    {savedData && (
-                      <div className="mt-3 text-sm text-black dark:text-white">
-                        <p><b>Title:</b> {savedData.title || "None"}</p>
-                        <p><b>Categories:</b> {savedData.categories.length > 0 ? savedData.categories.join(", ") : "None"}</p>
                       </div>
                     )}
                   </div>
@@ -1522,7 +1606,7 @@ const SidePanel = () => {
             {/* Dark Mode Toggle */}
             <div className="flex justify-center gap-2">
               <button
-                // onClick={toggleDarkMode}
+                onClick={toggleDarkMode}
                 aria-label="Toggle dark mode"
               >
                 {isDarkMode ? (
