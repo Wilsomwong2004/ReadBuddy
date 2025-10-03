@@ -1,20 +1,7 @@
 import './content.css'
-import { loadDarkMode, applyDarkMode } from './utils/darkMode.js';
 
 let selectedText = '';
 let isReadBuddyActive = false;
-
-loadDarkMode((isDark) => {
-  console.log("Dark mode loaded:", isDark);
-});
-
-if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === 'darkModeChanged') {
-      applyDarkMode(message.darkMode);
-    }
-  });
-}
 
 document.addEventListener('mouseup', () => {
   const selection = window.getSelection();
@@ -41,7 +28,6 @@ function showQuickActions(textToPreserve) {
   
   const tooltip = document.createElement('div');
   tooltip.id = 'readbuddy-tooltip';
-  tooltip.classList.add('readbuddy-tooltip');
   tooltip.innerHTML = `
     <div class="readbuddy-actions">
       <button data-action="summarize" title="Summarize">📄</button>
@@ -57,7 +43,6 @@ function showQuickActions(textToPreserve) {
   
   document.body.appendChild(tooltip);
   
-  // Add event listeners to buttons
   const buttons = tooltip.querySelectorAll('button[data-action]');
   buttons.forEach(button => {
     button.addEventListener('click', (e) => {
@@ -67,11 +52,9 @@ function showQuickActions(textToPreserve) {
       handleAction(action, preservedText);
     });
   });
-  
-  // Hide tooltip when clicking elsewhere also scrolled
+
   setTimeout(() => {
     document.addEventListener('click', hideTooltipOnClickOutside, true);
-    // document.addEventListener('scroll', hideTooltipOnClickOutside, true);
   }, 100);
 }
 
