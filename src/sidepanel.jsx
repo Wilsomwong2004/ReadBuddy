@@ -4,6 +4,7 @@ import { Settings, Save } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
+import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
 import './index.css';
 
 const SidePanel = () => {
@@ -52,22 +53,24 @@ const SidePanel = () => {
   }, []);
 
   useEffect(() => {
-    if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.get(['darkMode'], (result) => {
-        const savedDarkMode = result.darkMode === true;
-        console.log('Loaded dark mode:', savedDarkMode);
-        
-        setIsDarkMode(savedDarkMode);
-        
-        if (savedDarkMode) {
-          document.documentElement.classList.add('dark');
-          document.body.classList.add('dark');
-        } else {
-          document.documentElement.classList.remove('dark');
-          document.body.classList.remove('dark');
-        }
-      });
+    function handleMessage(message, sender, sendResponse) {
+      console.log("SidePanel received message:", message);
+      if (message.type === 'set-action' && message.action) {
+        setActiveTab(message.action);
+        setActivePanel(null);
+      }
     }
+
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      chrome.runtime.onMessage.addListener(handleMessage);
+      return () => chrome.runtime.onMessage.removeListener(handleMessage);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDarkMode((isDark) => {
+      setIsDarkMode(isDark);
+    });
   }, []);
 
   // const handleSave = () => {
@@ -76,23 +79,9 @@ const SidePanel = () => {
 
   const toggleDarkMode = () => {
     const newDarkMode = !isDarkMode;
-    console.log('Toggling dark mode:', newDarkMode);
-    
     setIsDarkMode(newDarkMode);
-    
-    if (newDarkMode) {
-      document.documentElement.classList.add('dark');
-      document.body.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.body.classList.remove('dark');
-    }
-    
-    if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.set({ darkMode: newDarkMode }, () => {
-        console.log('Dark mode saved:', newDarkMode);
-      });
-    }
+    applyDarkMode(newDarkMode);
+    saveDarkMode(newDarkMode);
   };
 
   const confirmSave = () => {
@@ -242,7 +231,6 @@ const SidePanel = () => {
     }
   }, []);
 
-  // Auto-extract page content when summarize tab is active and no text is selected
   useEffect(() => {
     if (activeTab === 'summarize' && !selectedText.trim()) {
       // extractPageContent(); // Get the entire page content
@@ -257,7 +245,6 @@ const SidePanel = () => {
         const results = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           function: () => {
-            // Try to get main content from common selectors
             const selectors = [
               'article',
               '[role="main"]',
@@ -1614,7 +1601,7 @@ const SidePanel = () => {
                     <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4 text-gray-700  hover:cursor-pointer hover:text-purple-600 transition-all" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-gray-300 dark:text-gray-700  hover:cursor-pointer hover:text-purple-600 transition-all" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
                   </svg>
                 )}
@@ -1623,13 +1610,13 @@ const SidePanel = () => {
                 onClick={openSave}
                 aria-label="Open save"
               >
-                <Save className='w-4 h-4 text-gray-700 hover:cursor-pointer hover:text-green-600 transition-all'/>
+                <Save className='w-4 h-4 text-gray-300 dark:text-gray-700 hover:cursor-pointer hover:text-green-600 transition-all'/>
               </button>
               <button
                 onClick={openSettings}
                 aria-label="Open settings"
               >
-                <Settings className='w-4 h-4 text-gray-700 hover:cursor-pointer hover:text-gray-300 transition-all'/>
+                <Settings className='w-4 h-4 text-gray-300 dark:text-gray-700 hover:cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 transition-all'/>
               </button>
             </div>
           </div>
