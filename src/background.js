@@ -11,6 +11,30 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   } 
 });
 
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "THEME_CHANGE") {
+    updateIcon(msg.isDark);
+  }
+});
+
+function updateIcon(isDark) {
+  const suffix = isDark ? "dark" : "light";
+  chrome.action.setIcon({
+    path: {
+      "16": `icon/icon-${suffix}-16.png`,
+      "48": `icon/icon-${suffix}-48.png`,
+      "128": `icon/icon-${suffix}-128.png`
+    }
+  });
+}
+
+const darkScheme = window.matchMedia("(prefers-color-scheme: dark)");
+updateIcon(darkScheme.matches);
+
+darkScheme.addEventListener("change", (e) => {
+  updateIcon(e.matches);
+});
+
 // Handle keyboard shortcuts
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'toggle-sidepanel') {

@@ -53,17 +53,25 @@ const SidePanel = () => {
   }, []);
 
   useEffect(() => {
-    function handleMessage(message, sender, sendResponse) {
-      console.log("SidePanel received message:", message);
-      if (message.type === 'set-action' && message.action) {
+    const handleMessage = (message, sender, sendResponse) => {
+      if (message.type === 'open-sidepanel') {
+        setActiveTab(message.action);
+        setSelectedText(message.text || '');
+        setTimeout(() => {
+          processText(message.action, message.text || '');
+        }, 200);
+      }
+      if (message.type === 'set-action') {
         setActiveTab(message.action);
         setActivePanel(null);
       }
-    }
+    };
 
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       chrome.runtime.onMessage.addListener(handleMessage);
-      return () => chrome.runtime.onMessage.removeListener(handleMessage);
+      return () => {
+        chrome.runtime.onMessage.removeListener(handleMessage);
+      };
     }
   }, []);
 

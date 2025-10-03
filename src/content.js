@@ -1,7 +1,20 @@
 import './content.css'
+import { loadDarkMode, applyDarkMode } from './utils/darkMode.js';
 
 let selectedText = '';
 let isReadBuddyActive = false;
+
+loadDarkMode((isDark) => {
+  console.log("Dark mode loaded:", isDark);
+});
+
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'darkModeChanged') {
+      applyDarkMode(message.darkMode);
+    }
+  });
+}
 
 document.addEventListener('mouseup', () => {
   const selection = window.getSelection();
@@ -22,24 +35,21 @@ function showQuickActions(textToPreserve) {
   const currentSelectedText = selection.toString().trim();
   if (!currentSelectedText) return;
   
-  // Use the preserved text or current selection
   const preservedText = textToPreserve || currentSelectedText;
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
   
   const tooltip = document.createElement('div');
   tooltip.id = 'readbuddy-tooltip';
+  tooltip.classList.add('readbuddy-tooltip');
   tooltip.innerHTML = `
     <div class="readbuddy-actions">
       <button data-action="summarize" title="Summarize">📄</button>
       <button data-action="translate" title="Translate">🌐</button>
       <button data-action="explain" title="Explain">💡</button>
-      <button data-action="define" title="Define">📖</button>
-      <button data-action="simplify" title="Simplify">✨</button>
     </div>
   `;
   
-  // Position tooltip near selection
   tooltip.style.position = 'fixed';
   tooltip.style.top = `${rect.top - 60}px`;
   tooltip.style.left = `${rect.left + (rect.width / 2) - 100}px`;
@@ -58,9 +68,10 @@ function showQuickActions(textToPreserve) {
     });
   });
   
-  // Hide tooltip when clicking elsewhere
+  // Hide tooltip when clicking elsewhere also scrolled
   setTimeout(() => {
     document.addEventListener('click', hideTooltipOnClickOutside, true);
+    // document.addEventListener('scroll', hideTooltipOnClickOutside, true);
   }, 100);
 }
 
@@ -79,82 +90,43 @@ function hideTooltipOnClickOutside(e) {
   }
 }
 
-// Handle different actions
 async function handleAction(action, text) {
   hideQuickActions();
   
   if (!text) return;
   
-  // Show loading indicator
   showLoadingIndicator();
+   chrome.runtime.sendMessage({
+    type: 'open-sidepanel',
+    action,
+    text
+  });
   
-  try {
-    switch (action) {
-      case 'summarize':
-        await summarizeText(text);
-        break;
-      case 'translate':
-        await translateText(text);
-        break;
-      case 'explain':
-        await explainText(text);
-        break;
-      case 'define':
-        await defineText(text);
-        break;
-      default:
-        console.log('Unknown action:', action);
-    }
-  } catch (error) {
-    console.error('Error handling action:', error);
-    showErrorMessage('An error occurred while processing your request.');
-  } finally {
-    hideLoadingIndicator();
-  }
+  setTimeout(hideLoadingIndicator, 1000);
 }
 
-async function summarizeText(text) {
-  const result = await callAI('summarize', text);
-  showResult('Summary', result);
-}
+// async function callSidebar(action, text) {
+//   const sidebar = document.getElementById('readbuddy-sidebar');
+//   if (sidebar) {
+//     sidebar.style.display = 'block'; 
+//   } else {
+//     console.warn('ReadBuddy sidebar not found');
+//   }
 
-async function translateText(text) {
-  const result = await callAI('translate', text);
-  showResult('Translation', result);
-}
+//   const inputBox = document.querySelector('#readbuddy-sidebar textarea, #readbuddy-sidebar input');
+//   if (inputBox) {
+//     inputBox.value = text;
+//     inputBox.dispatchEvent(new Event('input', { bubbles: true })); 
+//   } else {
+//     console.warn('No input box found inside ReadBuddy sidebar');
+//   }
 
-async function explainText(text) {
-  const result = await callAI('explain', text);
-  showResult('Explanation', result);
-}
+//   if (action) {
+//     console.log(`Action: ${action}, text pasted into sidebar.`);
+//   }
 
-async function defineText(text) {
-  const result = await callAI('define', text);
-  showResult('Definition', result);
-}
-
-async function callAI(action, text) {
-  const sidebar = document.getElementById('readbuddy-sidebar');
-  if (sidebar) {
-    sidebar.style.display = 'block'; 
-  } else {
-    console.warn('ReadBuddy sidebar not found');
-  }
-
-  const inputBox = document.querySelector('#readbuddy-sidebar textarea, #readbuddy-sidebar input');
-  if (inputBox) {
-    inputBox.value = text;
-    inputBox.dispatchEvent(new Event('input', { bubbles: true })); 
-  } else {
-    console.warn('No input box found inside ReadBuddy sidebar');
-  }
-
-  if (action) {
-    console.log(`Action: ${action}, text pasted into sidebar.`);
-  }
-
-  return text; 
-}
+//   return text; 
+// }
 
 function showLoadingIndicator() {
   const loader = document.createElement('div');
@@ -313,13 +285,11 @@ document.addEventListener('keydown', (e) => {
     showTemporaryMessage(`ReadBuddy ${isReadBuddyActive ? 'activated' : 'deactivated'}`);
   }
   
-  // Escape to hide any open panels
   if (e.key === 'Escape') {
     hideQuickActions();
     hideResult();
   }
 });
 
-// Initialize ReadBuddy
 console.log('ReadBuddy extension loaded successfully!');
 isReadBuddyActive = true;

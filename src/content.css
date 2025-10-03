@@ -29,3 +29,29 @@
   background: #e5e7eb;
   transform: scale(1.05);
 }
+
+#readbuddy-tooltip,
+#readbuddy-result,
+#readbuddy-loader,
+#readbuddy-error {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 6px;
+}
+
+/* Dark Mode */
+.dark #readbuddy-tooltip,
+.dark #readbuddy-result,
+.dark #readbuddy-loader,
+.dark #readbuddy-error {
+  background: #1e1e1e;
+  color: #f0f0f0;
+  border: 1px solid #444;
+}
+
+.dark .readbuddy-actions button {
+  background: #333;
+  color: #f0f0f0;
+}
