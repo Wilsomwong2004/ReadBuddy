@@ -45,12 +45,21 @@
     }
   ],
   "commands": {
-    "toggle-sidepanel": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+R",
-        "mac": "Command+Shift+R"
-      },
-      "description": "Toggle ReadBuddy side panel"
+     "open-summarize": {
+      "suggested_key": { "default": "Ctrl+Shift+S" },
+      "description": "Open sidebar: Summarize"
+    },
+    "open-translate": {
+      "suggested_key": { "default": "Ctrl+Shift+T" },
+      "description": "Open sidebar: Translate"
+    },
+    "open-explain": {
+      "suggested_key": { "default": "Ctrl+Shift+E" },
+      "description": "Open sidebar: Explain"
+    },
+    "open-chat": {
+      "suggested_key": { "default": "Ctrl+Shift+C" },
+      "description": "Open sidebar: Chat"
     }
   }
 }

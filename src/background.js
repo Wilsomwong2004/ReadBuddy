@@ -27,11 +27,18 @@ chrome.action.onClicked.addListener((tab) => {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   console.log("Background got message:", msg);
+  
+  if (msg.type === 'open-sidepanel') {
+    chrome.sidePanel.open({tabId: sender.tab.id}, () => {
+      setTimeout(() => {
+        chrome.runtime.sendMessage({
+          type: 'open-sidepanel',
+          action: msg.action,
+          text: msg.text
+        });
+      }, 200);
+    });
+  }
 });
 
-// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-//   if (message.type === 'OPEN_SIDEBAR') {
-//     chrome.runtime.sendMessage({ type: 'SHOW_SIDEBAR', ...message });
-//   }
-// });
 

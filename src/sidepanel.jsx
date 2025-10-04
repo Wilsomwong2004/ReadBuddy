@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, use } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import { Settings, Save } from 'lucide-react';
 import { initializeApp } from "firebase/app";
@@ -1414,7 +1414,6 @@ const SidePanel = () => {
                         <p className="text-sm mt-2 text-black dark:text-white">🎯 <b>Content Features</b></p>
                         <ul className="text-sm ml-4 list-disc text-black dark:text-white">
                           <li>Text type: {analysis.textType}</li>
-                          <li>Style: Formal / Informal</li>
                           <li>Key entities: {analysis.entities.join(", ") || "None detected"}</li>
                         </ul>
 
@@ -1422,7 +1421,6 @@ const SidePanel = () => {
                         <ul className="text-sm ml-4 list-disc text-black dark:text-white">
                           <li>Audience: Students / General readers</li>
                           <li>Difficulty: {analysis.difficulty}</li>
-                          <li>Focus: 根据分类结果提示</li>
                         </ul>
                       </>
                     );

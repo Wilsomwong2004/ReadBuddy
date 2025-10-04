@@ -206,7 +206,6 @@ function showErrorMessage(message) {
   const closeBtn = errorPanel.querySelector('.readbuddy-close');
   closeBtn.addEventListener('click', () => errorPanel.remove());
   
-  // Auto-hide after 5 seconds
   setTimeout(() => {
     if (document.body.contains(errorPanel)) {
       errorPanel.remove();
@@ -259,9 +258,7 @@ function showTemporaryMessage(message) {
   }, 2000);
 }
 
-// Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  // Ctrl+Shift+R to toggle ReadBuddy
   if (e.ctrlKey && e.shiftKey && e.key === 'R') {
     e.preventDefault();
     isReadBuddyActive = !isReadBuddyActive;
