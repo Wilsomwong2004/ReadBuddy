@@ -34,17 +34,26 @@ const ReadBuddyNotesPage = () => {
   }, []);
 
   const handleDeleteItem = (id) => {
-    const updatedItems = savedItems.filter(item => item.id !== id);
-    setSavedItems(updatedItems);
-    localStorage.setItem('savedItems', JSON.stringify(updatedItems));
-  };
+    if (window.confirm("Are you sure you want to delete this item?")) {
+      const updatedItems = savedItems.filter(item => item.id !== id);
+      setSavedItems(updatedItems);
 
+      chrome.storage.local.set({ savedItems: updatedItems }, () => {
+        console.log("✅ Item deleted from chrome.storage.local");
+      });
+    }
+  };
+  
   const handleToggleFavorite = (id) => {
     const updatedItems = savedItems.map(item =>
       item.id === id ? { ...item, favorite: !item.favorite } : item
     );
+
     setSavedItems(updatedItems);
-    localStorage.setItem('savedItems', JSON.stringify(updatedItems));
+
+    chrome.storage.local.set({ savedItems: updatedItems }, () => {
+      console.log(`Item ${id} favorite status updated in chrome.storage.local`);
+    });
   };
 
   const toggleExpandItem = (id) => {
@@ -212,9 +221,7 @@ const ReadBuddyNotesPage = () => {
           <SidebarNav />
         </aside>
 
-        {/* Main Content */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
           <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -246,18 +253,16 @@ const ReadBuddyNotesPage = () => {
             </div>
           </header>
 
-          {/* Content Area */}
           <div className="flex-1 overflow-y-auto p-6">
             <div className="max-w-5xl mx-auto">
-              {/* Category Filters */}
               {activeTab === 'saved' && (
-                <div className="mb-8 flex gap-3 overflow-x-auto pb-2">
+                <div className="mb-3 flex gap-3 overflow-x-auto pb-2">
                   <button
                     onClick={() => setCategoryFilter('all')}
                     className={`px-6 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
                       categoryFilter === 'all'
-                        ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30'
-                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-2 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md'
+                        ? 'bg-gradient-to-r from-gray-600 to-gray-500 text-white'
+                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-2 border-gray-200 dark:border-gray-800 hover:border-gray-400 dark:hover:border-gray-500 hover:shadow-md'
                     }`}
                   >
                     All
@@ -266,8 +271,8 @@ const ReadBuddyNotesPage = () => {
                     onClick={() => setCategoryFilter('summarize')}
                     className={`px-6 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
                       categoryFilter === 'summarize'
-                        ? 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-lg shadow-purple-500/30'
-                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-2 border-gray-200 dark:border-gray-700 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md'
+                        ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white'
+                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-2 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md'
                     }`}
                   >
                     Summarize
@@ -276,7 +281,7 @@ const ReadBuddyNotesPage = () => {
                     onClick={() => setCategoryFilter('translator')}
                     className={`px-6 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
                       categoryFilter === 'translator'
-                        ? 'bg-gradient-to-r from-green-600 to-green-500 text-white shadow-lg shadow-green-500/30'
+                        ? 'bg-gradient-to-r from-green-600 to-green-500 text-white'
                         : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-2 border-gray-200 dark:border-gray-700 hover:border-green-400 dark:hover:border-green-500 hover:shadow-md'
                     }`}
                   >
@@ -286,13 +291,13 @@ const ReadBuddyNotesPage = () => {
                     onClick={() => setCategoryFilter('explain')}
                     className={`px-6 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
                       categoryFilter === 'explain'
-                        ? 'bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-lg shadow-orange-500/30'
+                        ? 'bg-gradient-to-r from-orange-600 to-orange-500 text-white'
                         : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-2 border-gray-200 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-500 hover:shadow-md'
                     }`}
                   >
                     Explain
                   </button>
-                  <button
+                  {/* <button
                     onClick={() => setCategoryFilter('other')}
                     className={`px-6 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
                       categoryFilter === 'other'
@@ -301,13 +306,13 @@ const ReadBuddyNotesPage = () => {
                     }`}
                   >
                     Other
-                  </button>
+                  </button> */}
                 </div>
               )}
               
               {filteredItems.length === 0 ? (
                 <div className="text-center py-20">
-                  <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-700 rounded-2xl p-12 max-w-md mx-auto">
+                  <div className="p-12 max-w-md mx-auto">
                     <Bookmark className="w-20 h-20 text-blue-400 dark:text-blue-500 mx-auto mb-6" />
                     <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-3">
                       {searchQuery ? 'No items found' : `No ${getTabTitle().toLowerCase()} yet`}
@@ -324,13 +329,12 @@ const ReadBuddyNotesPage = () => {
                   {groupedItems.map((group) => (
                     <div key={group.date} className="relative">
                       {/* Date Header */}
-                      <div className="sticky top-0 z-10 flex items-center mb-6 bg-gray-50 dark:bg-gray-900 py-2">
+                      <div className="sticky top-0 z-10 flex items-center mb-6 py-2">
                         <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg">
                           <Calendar className="inline w-4 h-4 mr-2 mb-0.5" />
                           {formatDate(group.date)}
                           <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 blur opacity-30 rounded-xl"></div>
                         </div>
-                        <div className="flex-1 h-0.5 bg-gradient-to-r from-blue-300 to-transparent dark:from-blue-700 ml-4"></div>
                       </div>
                       
                       {/* Items for this date */}
@@ -341,11 +345,11 @@ const ReadBuddyNotesPage = () => {
                           
                           const typeConfig = {
                             summarize: { 
-                              color: 'purple', 
-                              gradient: 'from-purple-600 to-purple-500',
-                              bgLight: 'bg-purple-50 dark:bg-purple-900/20',
-                              textLight: 'text-purple-700 dark:text-purple-300',
-                              border: 'border-purple-200 dark:border-purple-800'
+                              color: 'blue', 
+                              gradient: 'from-blue-600 to-blue-500',
+                              bgLight: 'bg-blue-50 dark:bg-blue-900/20',
+                              textLight: 'text-blue-700 dark:text-blue-300',
+                              border: 'border-blue-200 dark:border-blue-800'
                             },
                             translator: { 
                               color: 'green', 
@@ -381,11 +385,9 @@ const ReadBuddyNotesPage = () => {
                               <div className={`absolute -left-[43px] top-8 w-5 h-5 bg-gradient-to-br ${config.gradient} rounded-full border-4 border-gray-50 dark:border-gray-900 shadow-lg group-hover:scale-125 transition-transform`}></div>
                               
                               <div className="space-y-4">
-                                {/* Header */}
                                 <div className="flex items-start justify-between gap-4">
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-3 flex-wrap">
-                                      {/* Item Type Badge */}
                                       {itemType !== 'other' && (
                                         <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide ${config.bgLight} ${config.textLight} shadow-sm`}>
                                           {itemType}
@@ -400,7 +402,7 @@ const ReadBuddyNotesPage = () => {
                                       
                                       <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/50 px-3 py-1 rounded-full">
                                         <Clock className="w-3.5 h-3.5" />
-                                        <span>{new Date(item.date + 'T00:00:00').toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+                                        <span>{item.time}</span>
                                       </div>
                                     </div>
                                     

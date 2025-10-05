@@ -68,10 +68,17 @@ const SidePanel = () => {
       }
     };
 
-    if (typeof chrome !== 'undefined' && chrome.runtime) {
-      chrome.runtime.onMessage.addListener(handleMessage);
+    if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+      const listener = (message) => {
+        if (message.type === "darkModeChanged") {
+          setIsDarkMode(message.darkMode);
+          applyDarkMode(message.darkMode);
+        }
+      };
+      chrome.runtime.onMessage.addListener(listener);
+
       return () => {
-        chrome.runtime.onMessage.removeListener(handleMessage);
+        chrome.runtime.onMessage.removeListener(listener);
       };
     }
   }, []);
@@ -104,6 +111,7 @@ const SidePanel = () => {
         result: result,
         url: url,
         // noteSpace: selectedNoteSpace,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
         tags: categories,
         favorite: favorite,
         readingLater: readingLater,

@@ -193,7 +193,7 @@ const Popup = () => {
       {/* Footer */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span>🔒 Local Processing</span>
+          <span>By Wilsomwong</span>
           <span>Version 1.0.0</span>
         </div>
       </div>
