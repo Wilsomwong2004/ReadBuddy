@@ -2,7 +2,6 @@ export const loadDarkMode = (callback) => {
   if (typeof chrome !== 'undefined' && chrome.storage) {
     chrome.storage.local.get(['darkMode'], (result) => {
       const isDark = result.darkMode === true;
-      applyDarkMode(isDark);
       if (callback) callback(isDark);
     });
   }
@@ -10,11 +9,13 @@ export const loadDarkMode = (callback) => {
 
 export const saveDarkMode = (isDark) => {
   if (typeof chrome !== 'undefined' && chrome.storage) {
-     chrome.storage.local.set({ darkMode: isDark }, () => {
+    chrome.storage.local.set({ darkMode: isDark }, () => {
       chrome.runtime.sendMessage({ type: 'darkModeChanged', darkMode: isDark });
     });
   }
+  localStorage.setItem("darkMode", isDark ? "true" : "false");
 };
+
 
 export const applyDarkMode = (isDark) => {
   if (isDark) {

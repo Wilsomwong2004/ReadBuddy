@@ -6,19 +6,15 @@ import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
 
 const Popup = () => {
   const [stats] = useState({
-    articlesRead: 247,
-    translations: 1200,
-    explanations: 89,
-    notes: 34
+    notes: 1,
   });
 
   const [isEnabled, setIsEnabled] = useState(true);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState("");
 
   useEffect(() => {
     loadDarkMode((isDark) => {
       setIsDarkMode(isDark);
-      applyDarkMode(isDark);
     });
   }, []);
 
@@ -44,6 +40,11 @@ const Popup = () => {
 
   const openSettings = () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('settings.html') });
+    window.close();
+  };
+
+  const openNotes = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('notes.html') });
     window.close();
   };
 
@@ -147,7 +148,8 @@ const Popup = () => {
       {/* Notes Section */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <button
-          onClick={() => openSidePanel('notes')}
+          onClick={openNotes}
+          aria-label="Open notes"
           className="w-full flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900 dark:to-orange-800 border border-amber-200 dark:border-amber-700 hover:from-amber-100 hover:to-orange-100 dark:hover:from-amber-800 dark:hover:to-orange-700 transition-all group"
         >
           <div className="flex items-center space-x-3">

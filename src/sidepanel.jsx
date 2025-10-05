@@ -26,7 +26,7 @@ const SidePanel = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [relatedConcepts, setRelatedConcepts] = useState("");
   const [loadingRelated, setLoadingRelated] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState("");
   const [deepThinkEnabled, setDeepThinkEnabled] = useState(false);
   const [activePanel, setActivePanel] = useState(null);
   const [showSavedMsg, setShowSavedMsg] = useState(false);
@@ -129,7 +129,6 @@ const SidePanel = () => {
 
   const openSave = () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('notes.html') });
-    window.close();
   };
 
   const endOfMessagesRef = useRef(null);
@@ -1022,7 +1021,7 @@ const SidePanel = () => {
                           className={`p-2 rounded border text-xs font-medium transition-colors duration-200 cursor-pointer ${
                             summaryMode === mode.id
                               ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-900 dark:text-white'
-                              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:bg-gray-700 dark:text-gray-300'
+                              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-300'
                           }`}
                         >
                           <span className="mr-1 dark:text-white"> {mode.icon} </span>

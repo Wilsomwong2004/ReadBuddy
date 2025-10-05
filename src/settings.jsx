@@ -12,7 +12,7 @@ const ReadBuddySettings = () => {
     autoProcess: true,
     defaultAction: 'summarize',
     language: 'en',
-    theme: 'light',
+    theme: '',
     shortcuts: {
       summarize: 'Ctrl+Shift+S',
       translate: 'Ctrl+Shift+T',
@@ -21,8 +21,8 @@ const ReadBuddySettings = () => {
   });
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('readBuddyTheme') || 'light';
-    const isDark = savedTheme === 'dark';
+    const savedTheme = localStorage.getItem('darkMode') || 'false';
+    const isDark = savedTheme === 'true';
     setIsDarkMode(isDark);
     setSettings(prev => ({
       ...prev,
@@ -37,12 +37,14 @@ const ReadBuddySettings = () => {
     }));
 
     if (key === 'theme') {
-      localStorage.setItem('readBuddyTheme', value);
+      localStorage.setItem('darkMode', value);
       
-      if (value === 'light') {
+      if (value === 'false') {
         setIsDarkMode(false);
-      } else if (value === 'dark') {
+        applyDarkMode(false);
+      } else if (value === 'true') {
         setIsDarkMode(true);
+        applyDarkMode(true);
       } else if (value === 'auto') {
         const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         setIsDarkMode(systemPrefersDark);
@@ -50,6 +52,7 @@ const ReadBuddySettings = () => {
         const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
         const handler = (e) => {
           setIsDarkMode(e.matches);
+          applyDarkMode(e.matches);
         };
         mediaQuery.addEventListener('change', handler);
         return () => mediaQuery.removeEventListener('change', handler);
@@ -88,7 +91,7 @@ const ReadBuddySettings = () => {
     setSettings(defaultSettings);
     setIsDarkMode(false);
     localStorage.setItem('readBuddySettings', JSON.stringify(defaultSettings));
-    localStorage.setItem('readBuddyTheme', 'light');
+    localStorage.setItem('darkMode', 'false');
   };
 
   const exportSettings = () => {
@@ -105,7 +108,7 @@ const ReadBuddySettings = () => {
     <div className="flex flex-col h-full">
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-          <BookOpen className="w-7 h-7 text-blue-600" />
+          <BookOpen className="w-7 h-7 text-blue-600 dark:text-blue-400" />
           ReadBuddy
         </h1>
       </div>
@@ -161,7 +164,7 @@ const ReadBuddySettings = () => {
   );
 
   return (
-    <div className={isDarkMode ? 'dark' : ''}>
+    <div className={isDarkMode ? 'true' : 'false'}>
       <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
         <aside className={`${sidebarOpen ? 'w-64' : 'w-0'} bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 overflow-hidden`}>
           <SidebarNav />
@@ -243,9 +246,9 @@ const ReadBuddySettings = () => {
                           onChange={(e) => handleSettingChange('theme', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         >
-                          <option value="light">Light</option>
-                          <option value="dark">Dark</option>
-                          <option value="auto">Auto</option>
+                          <option value="false">Light</option>
+                          <option value="true">Dark</option>
+                          {/* <option value="auto">Auto</option> */}
                         </select>
                       </div>
                     </div>

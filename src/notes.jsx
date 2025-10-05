@@ -16,8 +16,8 @@ const ReadBuddyNotesPage = () => {
   }, []);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('readBuddyTheme') || 'light';
-    setIsDarkMode(savedTheme === 'dark');
+    const savedTheme = localStorage.getItem('darkMode') || 'false';
+    setIsDarkMode(savedTheme === 'true');
   }, []);
 
   useEffect(() => {
