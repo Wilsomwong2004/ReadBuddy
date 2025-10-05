@@ -5,8 +5,8 @@ import { BookOpen, Settings } from 'lucide-react';
 import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
 
 const Popup = () => {
-  const [stats] = useState({
-    notes: 1,
+  const [stats, setStats] = useState({
+    notes: 0,
   });
 
   const [isEnabled, setIsEnabled] = useState(true);
@@ -15,6 +15,13 @@ const Popup = () => {
   useEffect(() => {
     loadDarkMode((isDark) => {
       setIsDarkMode(isDark);
+    });
+  }, []);
+
+  useEffect(() => {
+    chrome.storage.local.get(["savedItems"], (result) => {
+      const savedItems = result.savedItems || [];
+      setStats({ notes: savedItems.length });
     });
   }, []);
 
@@ -193,7 +200,7 @@ const Popup = () => {
       {/* Footer */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span>By Wilsomwong</span>
+          <span>Chrome API</span>
           <span>Version 1.0.0</span>
         </div>
       </div>
