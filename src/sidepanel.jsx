@@ -32,6 +32,7 @@ const SidePanel = () => {
   const [showSavedMsg, setShowSavedMsg] = useState(false);
 
   const[favorite, setFavorite] = useState(false);
+  const [readingLater, setReadingLater] = useState(false);
   const [categories, setCategories] = useState([]);
   const [newCategory, setNewCategory] = useState("");
   const [title, setTitle] = useState("");
@@ -102,9 +103,10 @@ const SidePanel = () => {
         text: selectedText,
         result: result,
         url: url,
-        noteSpace: selectedNoteSpace,
+        // noteSpace: selectedNoteSpace,
         tags: categories,
         favorite: favorite,
+        readingLater: readingLater,
         category: activeTab,
         date: new Date().toISOString().split('T')[0]
       };
@@ -1429,7 +1431,7 @@ const SidePanel = () => {
 
                 {activePanel === "save" && (
                   <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
-                    <p className="font-semibold text-lg mb-2 text-black dark:text-white">💾 Save to Knowledge Base</p>
+                    <p className="font-semibold text-lg mb-3 text-black dark:text-white">💾 Save Notes</p>
 
                     {/* Title */}
                     <label className="block text-sm mb-1 text-black dark:text-white">
@@ -1444,7 +1446,7 @@ const SidePanel = () => {
                     />
 
                     {/* NoteSpace */}
-                    <label className="block text-sm mb-1 text-black dark:text-white">
+                    {/* <label className="block text-sm mb-1 text-black dark:text-white">
                       NoteSpace <span className="text-red-500">*</span>
                     </label>
                     <div className="flex gap-2 mb-3">
@@ -1470,7 +1472,7 @@ const SidePanel = () => {
                       >
                         + Create
                       </button>
-                    </div>
+                    </div> */}
 
                     {/* Tags (optional) */}
                     <label className="block text-sm mb-1 text-black dark:text-white">
@@ -1520,13 +1522,22 @@ const SidePanel = () => {
                       Mark as Favorite
                     </label>
 
-                    {/* Save / Cancel */}
+                    <label className="block text-sm mt-2 mb-1 text-black dark:text-white">
+                      <input
+                        type="checkbox"
+                        checked={readingLater}
+                        onChange={(e) => setReadingLater(e.target.checked)}
+                        className="mr-2"
+                      />
+                      Add to Reading Later
+                    </label>
+
                     <div className="flex gap-2 mt-4">
                       <button
                         onClick={confirmSave}
-                        disabled={!title.trim() || !selectedNoteSpace}
+                        disabled={!title.trim()}
                         className={`px-3 py-1 text-xs rounded-md text-white ${
-                          !title.trim() || !selectedNoteSpace
+                          !title.trim()
                             ? "bg-gray-400 cursor-not-allowed"
                             : "bg-green-600 hover:bg-green-700"
                         }`}
