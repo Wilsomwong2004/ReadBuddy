@@ -32,16 +32,12 @@ const Popup = () => {
     saveDarkMode(newDarkMode);
   };
 
-  const openSidePanel = (action = null) => {
+  const openSidePanel = (tabName) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.sidePanel.open({ tabId: tabs[0].id });
-      if (action) {
-        chrome.runtime.sendMessage({ type: 'set-action', action }, () => {
-          window.close();
-        });
-      } else {
+      chrome.storage.local.set({ activeTab: tabName }, () => {
+        chrome.sidePanel.open({ tabId: tabs[0].id });
         window.close();
-      }
+      });
     });
   };
 

@@ -111,16 +111,29 @@ const ReadBuddyNotesPage = () => {
   const formatResult = (result) => {
     if (!result) return '';
     
-    // Split by asterisks for bullet points
-    const parts = result.split('*').filter(part => part.trim());
+    // Split by numbered patterns (1., 2., etc.) or bullet points
+    const lines = result.split('\n').filter(line => line.trim());
     
-    return parts.map((part, index) => {
-      const trimmedPart = part.trim();
-      if (!trimmedPart) return null;
+    return lines.map((line, index) => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return null;
       
-      // Check if it's a header (contains colons and is at the start)
-      if (index === 0 && trimmedPart.includes(':')) {
-        const [header, ...rest] = trimmedPart.split(':');
+      // Check if line starts with a number followed by a period (e.g., "1.", "2.")
+      const numberedMatch = trimmedLine.match(/^(\d+)\.\s*(.+)/);
+      if (numberedMatch) {
+        const [, number, content] = numberedMatch;
+        return (
+          <div key={index} className="mb-4">
+            <div className="font-semibold text-gray-900 dark:text-gray-100">
+              {number}. {content}
+            </div>
+          </div>
+        );
+      }
+      
+      // Check if it's a header (contains colons)
+      if (trimmedLine.includes(':') && !trimmedLine.startsWith('•')) {
+        const [header, ...rest] = trimmedLine.split(':');
         return (
           <div key={index} className="mb-3">
             <strong className="text-gray-900 dark:text-gray-100">{header}:</strong>
@@ -129,11 +142,21 @@ const ReadBuddyNotesPage = () => {
         );
       }
       
-      // Regular bullet point
+      // Handle bullet points (lines starting with • or *)
+      if (trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
+        const content = trimmedLine.substring(1).trim();
+        return (
+          <div key={index} className="flex gap-2 mb-2 ml-4">
+            <span className="text-blue-600 dark:text-blue-400 mt-1">•</span>
+            <span className="flex-1">{content}</span>
+          </div>
+        );
+      }
+      
+      // Regular text
       return (
-        <div key={index} className="flex gap-2 mb-2">
-          <span className="text-blue-600 dark:text-blue-400 mt-1">•</span>
-          <span className="flex-1">{trimmedPart}</span>
+        <div key={index} className="mb-2">
+          {trimmedLine}
         </div>
       );
     }).filter(Boolean);
@@ -557,7 +580,7 @@ const ReadBuddyNotesPage = () => {
                                         : 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
                                     }`}
                                   >
-                                    <Clock className={`w-4 h-4 ${item.readingLater ? 'fill-purple-500 dark:fill-purple-400' : ''}`} />
+                                    <Clock className={`w-4 h-4 ${item.readingLater ? '' : ''}`} />
                                     <span className="hidden sm:inline">{item.readingLater ? 'Reading Later' : 'Read Later'}</span>
                                     <span className="sm:hidden">Later</span>
                                   </button>

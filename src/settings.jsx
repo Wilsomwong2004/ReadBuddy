@@ -8,15 +8,17 @@ const ReadBuddySettings = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [saved, setSaved] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [os, setOS] = useState("unknown");
   const [settings, setSettings] = useState({
     autoProcess: true,
     defaultAction: 'summarize',
     language: 'en',
     theme: '',
     shortcuts: {
-      summarize: 'Ctrl+Shift+S',
-      translate: 'Ctrl+Shift+T',
-      explain: 'Ctrl+Shift+E'
+      summarize: '',
+      translate: '',
+      explain: '',
+      chat: ''
     }
   });
 
@@ -30,11 +32,95 @@ const ReadBuddySettings = () => {
     }));
   }, []);
 
+  useEffect(() => {
+    const getOS = () => {
+      const platform = navigator.platform.toLowerCase();
+      if (platform.includes("mac")) return "mac";
+      if (platform.includes("win")) return "windows";
+      if (/linux/.test(platform)) return "linux";
+      return "unknown";
+    };
+    const detectedOS = getOS();
+    setOS(detectedOS);
+    console.log("Detected OS:", detectedOS);
+  }, []);
+
+ useEffect(() => {
+    if (chrome?.commands) {
+      chrome.commands.getAll((commands) => {
+        const updatedShortcuts = { ...settings.shortcuts };
+
+        commands.forEach((cmd) => {
+          if (cmd.name === "open-summarize") {
+            updatedShortcuts.summarize = cmd.shortcut || "";
+          } else if (cmd.name === "open-translate") {
+            updatedShortcuts.translate = cmd.shortcut || "";
+          } else if (cmd.name === "open-explain") {
+            updatedShortcuts.explain = cmd.shortcut || "";
+          } else if (cmd.name === "open-chat") {
+            updatedShortcuts.chat = cmd.shortcut || "";
+          }
+        });
+
+        setSettings((prev) => ({
+          ...prev,
+          shortcuts: updatedShortcuts
+        }));
+
+        console.log("[ShortcutSettings] current shortcuts:", updatedShortcuts);
+      });
+    }
+
+    chrome.storage.local.get("shortcuts", ({ shortcuts }) => {
+      if (shortcuts) {
+        setSettings((prev) => ({
+          ...prev,
+          shortcuts: { ...prev.shortcuts, ...shortcuts }
+        }));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleKeydown = (e) => {
+      const combo = [
+        e.ctrlKey ? "Ctrl" : "",
+        e.shiftKey ? "Shift" : "",
+        e.altKey ? "Alt" : "",
+        e.metaKey ? "Meta" : "",
+        e.key.toUpperCase()
+      ].filter(Boolean).join("+");
+
+      const { summarize, translate, explain, chat } = settings.shortcuts;
+
+      if (combo === summarize) {
+        console.log("Trigger the Summarize shortcuts!");
+        chrome.runtime.sendMessage({ type: "open-sidepanel", action: "summarize" });
+      } else if (combo === translate) {
+        console.log("Trigger the Translate shortcuts!");
+        chrome.runtime.sendMessage({ type: "open-sidepanel", action: "translate" });
+      } else if (combo === explain) {
+        console.log("Trigger the Explain shortcuts!");
+        chrome.runtime.sendMessage({ type: "open-sidepanel", action: "explain" });
+      } else if (combo === chat) {
+        console.log("Trigger the Chat shortcuts!")
+        chrome.runtime.sendMessage({ type: "open-sidepanel", action: "chat" });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [settings.shortcuts]);
+
   const handleSettingChange = (key, value) => {
     setSettings(prev => ({
       ...prev,
       [key]: value
     }));
+
+    if(key === 'defaultAction') {
+      localStorage.setItem("defaultActiveTab", value);
+    }
 
     if (key === 'theme') {
       localStorage.setItem('darkMode', value);
@@ -61,13 +147,17 @@ const ReadBuddySettings = () => {
   };
 
   const handleShortcutChange = (action, shortcut) => {
-    setSettings(prev => ({
-      ...prev,
-      shortcuts: {
-        ...prev.shortcuts,
-        [action]: shortcut
-      }
-    }));
+    setSettings(prev => {
+      const newShortcuts = { ...prev.shortcuts, [action]: shortcut };
+      const newSettings = { ...prev, shortcuts: newShortcuts };
+
+      console.log("Updated shortcut:", action, shortcut);
+      chrome.storage.local.set({ shortcuts: newShortcuts }, () => {
+        console.log("Sync to chrome.storage.local:", newShortcuts);
+      });
+
+      return newSettings;
+    });
   };
 
   const saveSettings = () => {
@@ -79,13 +169,14 @@ const ReadBuddySettings = () => {
   const resetSettings = () => {
     const defaultSettings = {
       autoProcess: true,
-      defaultAction: 'summarize',
+      defaultAction: localStorage.getItem(DefaultActivePage),
       language: 'en',
       theme: 'light',
       shortcuts: {
         summarize: 'Ctrl+Shift+S',
         translate: 'Ctrl+Shift+T',
-        explain: 'Ctrl+Shift+E'
+        explain: 'Ctrl+Shift+E',
+        chat: 'Ctrl+Shift+C'
       }
     };
     setSettings(defaultSettings);
@@ -236,6 +327,7 @@ const ReadBuddySettings = () => {
                           <option value="summarize">Summarize</option>
                           <option value="translate">Translate</option>
                           <option value="explain">Explain</option>
+                          <option value="chat">Chat</option>
                         </select>
                       </div>
 
@@ -299,7 +391,7 @@ const ReadBuddySettings = () => {
                         />
                       </div>
                       
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700">
                         <div>
                           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Explain</span>
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Quick explain shortcut</p>
@@ -308,6 +400,19 @@ const ReadBuddySettings = () => {
                           type="text"
                           value={settings.shortcuts.explain}
                           onChange={(e) => handleShortcutChange('explain', e.target.value)}
+                          className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Chat</span>
+                          <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>Quick chat shortcut</p>
+                        </div>
+                        <input
+                          type="text"
+                          value={settings.shortcuts.chat}
+                          onChange={(e) => handleShortcutChange('chat', e.target.value)}
                           className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                       </div>

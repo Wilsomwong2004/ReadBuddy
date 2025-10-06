@@ -44,21 +44,33 @@
       "css": ["content.css"]
     }
   ],
-  "commands": {
-     "open-summarize": {
-      "suggested_key": { "default": "Ctrl+Shift+S" },
+ "commands": {
+    "open-summarize": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Alt+Shift+S"
+      },
       "description": "Open sidebar: Summarize"
     },
     "open-translate": {
-      "suggested_key": { "default": "Ctrl+Shift+T" },
+      "suggested_key": {
+        "default": "Alt+Shift+T",
+        "mac": "Alt+Shift+T"
+      },
       "description": "Open sidebar: Translate"
     },
     "open-explain": {
-      "suggested_key": { "default": "Ctrl+Shift+E" },
+      "suggested_key": {
+        "default": "Alt+Shift+E",
+        "mac": "Alt+Shift+E"
+      },
       "description": "Open sidebar: Explain"
     },
     "open-chat": {
-      "suggested_key": { "default": "Ctrl+Shift+C" },
+      "suggested_key": {
+        "default": "Alt+Shift+C",
+        "mac": "Alt+Shift+C"
+      },
       "description": "Open sidebar: Chat"
     }
   }

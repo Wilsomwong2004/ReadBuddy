@@ -8,7 +8,7 @@ import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
 import './index.css';
 
 const SidePanel = () => {
-  const [activeTab, setActiveTab] = useState('summarize');
+  const [activeTab, setActiveTab] = useState(localStorage.getItem("defaultActiveTab") || "summarize");
   const [selectedText, setSelectedText] = useState('');
   const [result, setResult] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -30,6 +30,7 @@ const SidePanel = () => {
   const [deepThinkEnabled, setDeepThinkEnabled] = useState(false);
   const [activePanel, setActivePanel] = useState(null);
   const [showSavedMsg, setShowSavedMsg] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
 
   const[favorite, setFavorite] = useState(false);
   const [readingLater, setReadingLater] = useState(false);
@@ -53,34 +54,16 @@ const SidePanel = () => {
     checkAPISupport();
   }, []);
 
-  useEffect(() => {
-    const handleMessage = (message, sender, sendResponse) => {
-      if (message.type === 'open-sidepanel') {
-        setActiveTab(message.action);
-        setSelectedText(message.text || '');
-        setTimeout(() => {
-          processText(message.action, message.text || '');
-        }, 200);
-      }
-      if (message.type === 'set-action') {
-        setActiveTab(message.action);
-        setActivePanel(null);
-      }
-    };
+ useEffect(() => {
+    chrome.storage.local.get("activeTab", (data) => {
+      if (data.activeTab) setActiveTab(data.activeTab);
+    });
 
-    if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
-      const listener = (message) => {
-        if (message.type === "darkModeChanged") {
-          setIsDarkMode(message.darkMode);
-          applyDarkMode(message.darkMode);
-        }
-      };
-      chrome.runtime.onMessage.addListener(listener);
-
-      return () => {
-        chrome.runtime.onMessage.removeListener(listener);
-      };
-    }
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === "local" && changes.activeTab) {
+        setActiveTab(changes.activeTab.newValue);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -101,8 +84,8 @@ const SidePanel = () => {
   };
 
   const confirmSave = () => {
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      const currentTab = tabs[0]; 
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      const currentTab = tabs[0];
       const url = currentTab.url;
       const savedItem = {
         id: Date.now(),
@@ -110,26 +93,37 @@ const SidePanel = () => {
         text: selectedText,
         result: result,
         url: url,
-        // noteSpace: selectedNoteSpace,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
         tags: categories,
         favorite: favorite,
         readingLater: readingLater,
         category: activeTab,
-        date: new Date().toISOString().split('T')[0]
+        date: new Date().toISOString().split('T')[0],
       };
 
-      chrome.storage.local.get(['savedItems'], function(data) {
+      chrome.storage.local.get(['savedItems'], function (data) {
         const savedItems = data.savedItems || [];
         savedItems.push(savedItem);
-        chrome.storage.local.set({savedItems: savedItems}, function() {
-          setShowSavedMsg(true);
+        chrome.storage.local.set({ savedItems: savedItems }, function () {
+          if (chrome.runtime.lastError) {
+            console.error("Save failed:", chrome.runtime.lastError);
+            showToast("❌ Failed to save. Please try again.");
+            return;
+          }
+          showToast("✅ Saved successfully!");
+
+          setTitle("");
+          setCategories([]);
+          setNewCategory("");
+          setFavorite(false);
+          setReadingLater(false);
+
+          setActivePanel(null);
         });
       });
     });
 
-    setSavedData(null); 
-    setTimeout(() => setShowSavedMsg(false), 2000);
+    setSavedData(null);
   };
 
   const openSettings = () => {
@@ -139,6 +133,11 @@ const SidePanel = () => {
 
   const openSave = () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('notes.html') });
+  };
+
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(""), 2500);
   };
 
   const endOfMessagesRef = useRef(null);
@@ -231,17 +230,25 @@ const SidePanel = () => {
 
   useEffect(() => {
     const handleMessage = (message, sender, sendResponse) => {
-      if (message.type === 'set-action') {
+      if (
+          message.type === 'set-action' || 
+          message.type === 'open-sidepanel' || 
+          message.type === 'open-sidepanel-from-command'
+      ) {
+        console.log(`Sidebar received action: ${message.action}`);
         setActiveTab(message.action);
+        
+        if (message.type === 'open-sidepanel') {
+          setSelectedText(message.text || '');
+        }
       }
-      if (message.type === 'open-sidepanel') {
-        setActiveTab(message.action);
-        setSelectedText(message.text || '');
-      }
+      
+      // if (typeof sendResponse === 'function') { return true; } 
     };
 
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       chrome.runtime.onMessage.addListener(handleMessage);
+      
       return () => {
         chrome.runtime.onMessage.removeListener(handleMessage);
       };
@@ -1482,9 +1489,8 @@ const SidePanel = () => {
                       </button>
                     </div> */}
 
-                    {/* Tags (optional) */}
                     <label className="block text-sm mb-1 text-black dark:text-white">
-                      Tags (optional)
+                      Tags
                     </label>
                     <div className="mt-2 flex flex-col gap-2">
                       <div className="flex gap-2">
@@ -1646,6 +1652,12 @@ const SidePanel = () => {
           </div>
         </div>
       </div>
+
+      {toastMsg && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-md shadow-lg animate-slide-down-up z-50">
+          {toastMsg}
+        </div>
+      )}
 
       <style jsx>{`
         @keyframes fade-in {
