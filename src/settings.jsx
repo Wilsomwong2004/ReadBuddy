@@ -7,11 +7,12 @@ import { BookOpen, Clock, Star, Settings, Menu, X, Bookmark, Save, RotateCcw, Do
 const ReadBuddySettings = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [savedItems, setSavedItems] = useState([]);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [os, setOS] = useState("unknown");
+  const [os, setOS] = useState("Unknown OS");
   const [settings, setSettings] = useState({
     autoProcess: true,
-    defaultAction: 'summarize',
+    defaultAction: '',
     language: 'en',
     theme: '',
     shortcuts: {
@@ -21,6 +22,21 @@ const ReadBuddySettings = () => {
       chat: ''
     }
   });
+
+  useEffect(() => {
+    chrome.storage.local.get(['savedItems'], (result) => {
+      const items = result.savedItems || []; 
+      setSavedItems(items);
+    });
+
+    chrome.storage.local.get(['activeTab'], (result) => {
+      const tab = result.activeTab || 'summarize';
+      setSettings(prev => ({
+        ...prev,
+        defaultAction: tab
+      }));
+    });
+  }, []);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('darkMode') || 'false';
@@ -136,7 +152,7 @@ const ReadBuddySettings = () => {
     }));
 
     if(key === 'defaultAction') {
-      localStorage.setItem("defaultActiveTab", value);
+      chrome.storage.local.set({ activeTab: value });
     }
 
     if (key === 'theme') {
@@ -163,6 +179,40 @@ const ReadBuddySettings = () => {
     }
   };
 
+  const handleShortcutKeyDown = (action, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    chrome.runtime.sendMessage({ type: "setting-shortcut-start" });
+
+    const isMac = os === 'Mac OS' || os === 'iOS';
+    const hasModifier = e.altKey || e.ctrlKey || e.metaKey;
+
+    if (!hasModifier) return;
+
+    let combo = '';
+    if (isMac) {
+      if (e.metaKey) combo += '⌘';
+      if (e.altKey) combo += '⌥';
+      if (e.shiftKey) combo += '⇧';
+      if (e.ctrlKey) combo += '⌃';
+    } else {
+      if (e.ctrlKey) combo += 'Ctrl+';
+      if (e.altKey) combo += 'Alt+';
+      if (e.shiftKey) combo += 'Shift+';
+      if (e.metaKey) combo += 'Meta+';
+    }
+
+    const mainKey = e.code.replace("Key", "").toUpperCase();
+    combo += mainKey;
+
+    handleShortcutChange(action, combo);
+
+    setTimeout(() => {
+      chrome.runtime.sendMessage({ type: 'setting-shortcut-end' });
+    }, 400);
+  };
+
   const handleShortcutChange = (action, shortcut) => {
     setSettings(prev => {
       const newShortcuts = { ...prev.shortcuts, [action]: shortcut };
@@ -186,7 +236,7 @@ const ReadBuddySettings = () => {
   const resetSettings = () => {
     const defaultSettings = {
       autoProcess: true,
-      defaultAction: localStorage.getItem(DefaultActivePage),
+      defaultAction: chrome.storage.local.set({ activeTab: value }),
       language: 'en',
       theme: 'light',
       shortcuts: {
@@ -226,16 +276,19 @@ const ReadBuddySettings = () => {
           icon={Bookmark} 
           label="Saved Notes"
           onClick={() => window.location.href = 'notes.html?tab=saved'}
+          count={savedItems.length}
         />
         <NavItem 
           icon={Clock} 
           label="Reading List"
           onClick={() => window.location.href = 'notes.html?tab=reading'}
+          count={savedItems.filter(item => item.readingLater === true).length}
         />
         <NavItem 
           icon={Star} 
           label="Favorites"
           onClick={() => window.location.href = 'notes.html?tab=favorites'}
+          count={savedItems.filter(item => item.favorite === true).length}
         />
       </nav>
       
@@ -245,17 +298,28 @@ const ReadBuddySettings = () => {
     </div>
   );
 
-  const NavItem = ({ icon: Icon, label, active = false, onClick }) => (
+  const NavItem = ({ icon: Icon, label, active = false, onClick, count }) => (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+      className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors ${
         active 
           ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' 
           : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
       }`}
     >
-      <Icon className="w-5 h-5" />
-      <span>{label}</span>
+      <div className="flex items-center gap-3">
+        <Icon className="w-5 h-5" />
+        <span>{label}</span>
+      </div>
+      {count !== undefined && count > 0 && (
+        <span className={`text-xs px-2 py-1 rounded-full ${
+          active 
+            ? 'bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-200' 
+            : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+        }`}>
+          {count}
+        </span>
+      )}
     </button>
   );
 
@@ -323,7 +387,7 @@ const ReadBuddySettings = () => {
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">General</h3>
                     
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700">
+                      {/* <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700">
                         <div>
                           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Auto-process selected text</label>
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Automatically process text when selected</p>
@@ -332,7 +396,7 @@ const ReadBuddySettings = () => {
                           checked={settings.autoProcess}
                           onChange={(e) => handleSettingChange('autoProcess', e.target.checked)}
                         />
-                      </div>
+                      </div> */}
 
                       <div className="pb-4 border-b border-gray-100 dark:border-gray-700">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Default action</label>
@@ -390,11 +454,14 @@ const ReadBuddySettings = () => {
                         <input
                           type="text"
                           value={settings.shortcuts.summarize}
-                          onChange={(e) => handleShortcutChange('summarize', e.target.value)}
-                          className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          onKeyDown={(e) => handleShortcutKeyDown('summarize', e)}
+                          placeholder={os === 'Mac OS' ? '⌘⌥⇧ + Key' : 'Ctrl+Alt+Shift + Key'}
+                          // readOnly
+                          className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-not-allowed select-none"
+                          disabled
                         />
                       </div>
-                      
+
                       <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700">
                         <div>
                           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Translate</span>
@@ -403,11 +470,14 @@ const ReadBuddySettings = () => {
                         <input
                           type="text"
                           value={settings.shortcuts.translate}
-                          onChange={(e) => handleShortcutChange('translate', e.target.value)}
-                          className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          onKeyDown={(e) => handleShortcutKeyDown('translate', e)}
+                          placeholder={os === 'Mac OS' ? '⌘⌥⇧ + Key' : 'Ctrl+Alt+Shift + Key'}
+                          // readOnly
+                          className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-not-allowed select-none"
+                          disabled
                         />
                       </div>
-                      
+
                       <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700">
                         <div>
                           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Explain</span>
@@ -416,21 +486,27 @@ const ReadBuddySettings = () => {
                         <input
                           type="text"
                           value={settings.shortcuts.explain}
-                          onChange={(e) => handleShortcutChange('explain', e.target.value)}
-                          className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          onKeyDown={(e) => handleShortcutKeyDown('explain', e)}
+                          placeholder={os === 'Mac OS' ? '⌘⌥⇧ + Key' : 'Ctrl+Alt+Shift + Key'}
+                          // readOnly
+                          className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-not-allowed select-none"
+                          disabled
                         />
                       </div>
 
                       <div className="flex items-center justify-between">
                         <div>
                           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Chat</span>
-                          <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>Quick chat shortcut</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Quick chat shortcut</p>
                         </div>
                         <input
                           type="text"
                           value={settings.shortcuts.chat}
-                          onChange={(e) => handleShortcutChange('chat', e.target.value)}
-                          className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          onKeyDown={(e) => handleShortcutKeyDown('chat', e)}
+                          placeholder={os === 'Mac OS' ? '⌘⌥⇧ + Key' : 'Ctrl+Alt+Shift + Key'}
+                          // readOnly
+                          className="w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-not-allowed select-none"
+                          disabled
                         />
                       </div>
                     </div>

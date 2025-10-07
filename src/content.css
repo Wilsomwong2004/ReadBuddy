@@ -1,57 +1,192 @@
 #readbuddy-tooltip {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  padding: 8px;
-  border: 1px solid #e5e7eb;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  animation: fadeIn 0.2s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .readbuddy-actions {
   display: flex;
-  gap: 4px;
+  gap: 8px;
+  background: white;
+  padding: 8px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode for tooltip */
+#readbuddy-tooltip.dark .readbuddy-actions {
+  background: #1f2937;
+  border: 1px solid #374151;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
 }
 
 .readbuddy-actions button {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: #f3f4f6;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
+  gap: 4px;
+  padding: 10px 14px;
+  border: none;
+  background: white;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 70px;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button {
+  background: #374151;
 }
 
 .readbuddy-actions button:hover {
-  background: #e5e7eb;
-  transform: scale(1.05);
+  background: #f5f5f5;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-#readbuddy-tooltip,
-#readbuddy-result,
-#readbuddy-loader,
-#readbuddy-error {
-  background: #ffffff;
-  color: #000000;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  padding: 6px;
+#readbuddy-tooltip.dark .readbuddy-actions button:hover {
+  background: #4b5563;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* Dark Mode */
-.dark #readbuddy-tooltip,
-.dark #readbuddy-result,
-.dark #readbuddy-loader,
-.dark #readbuddy-error {
-  background: #1e1e1e;
-  color: #f0f0f0;
-  border: 1px solid #444;
+.readbuddy-actions button .icon {
+  font-size: 20px;
+  line-height: 1;
 }
 
-.dark .readbuddy-actions button {
-  background: #333;
-  color: #f0f0f0;
+.readbuddy-actions button .label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #333;
+  white-space: nowrap;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button .label {
+  color: #e5e7eb;
+}
+
+.readbuddy-actions button[data-action="summarize"]:hover {
+  background: #eff6ff;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button[data-action="summarize"]:hover {
+  background: #1e3a8a;
+}
+
+.readbuddy-actions button[data-action="summarize"]:hover .label {
+  color: #2563eb;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button[data-action="summarize"]:hover .label {
+  color: #93c5fd;
+}
+
+.readbuddy-actions button[data-action="translate"]:hover {
+  background: #f0fdf4;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button[data-action="translate"]:hover {
+  background: #14532d;
+}
+
+.readbuddy-actions button[data-action="translate"]:hover .label {
+  color: #16a34a;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button[data-action="translate"]:hover .label {
+  color: #86efac;
+}
+
+.readbuddy-actions button[data-action="explain"]:hover {
+  background: #fffbeb;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button[data-action="explain"]:hover {
+  background: #78350f;
+}
+
+.readbuddy-actions button[data-action="explain"]:hover .label {
+  color: #d97706;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button[data-action="explain"]:hover .label {
+  color: #fcd34d;
+}
+
+.readbuddy-actions button[data-action="chat"]:hover {
+  background: #faf5ff;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button[data-action="chat"]:hover {
+  background: #581c87;
+}
+
+.readbuddy-actions button[data-action="chat"]:hover .label {
+  color: #9333ea;
+}
+
+#readbuddy-tooltip.dark .readbuddy-actions button[data-action="chat"]:hover .label {
+  color: #d8b4fe;
+}
+
+/* Loading Indicator */
+#readbuddy-loader {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.readbuddy-spinner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: white;
+  padding: 12px 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+#readbuddy-loader.dark .readbuddy-spinner {
+  background: #1f2937;
+  border: 1px solid #374151;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.readbuddy-spinner span {
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+}
+
+#readbuddy-loader.dark .readbuddy-spinner span {
+  color: #e5e7eb;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+#readbuddy-loader.dark .spinner {
+  border: 3px solid #374151;
+  border-top: 3px solid #60a5fa;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }

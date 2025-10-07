@@ -9,7 +9,7 @@ const ReadBuddyNotesPage = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [savedItems, setSavedItems] = useState([]);
-  const [isDarkMode, setIsDarkMode] = useState("");
+  const [isDarkMode, setIsDarkMode] = useState("false");
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [viewMode, setViewMode] = useState('list');
   const [expandedItems, setExpandedItems] = useState(new Set());
@@ -17,7 +17,7 @@ const ReadBuddyNotesPage = () => {
   useEffect(() => {
     chrome.storage.local.get(['savedItems'], (result) => {
       const items = result.savedItems || []; 
-      console.log("📦 Loaded items:", items);
+      console.log("Loaded items:", items);
       setSavedItems(items);
     });
   }, []);
@@ -25,7 +25,22 @@ const ReadBuddyNotesPage = () => {
   useEffect(() => {
     loadDarkMode((isDark) => {
       setIsDarkMode(isDark);
+      applyDarkMode(isDark);
     });
+
+    const handleStorageChange = (changes, areaName) => {
+      if (areaName === 'local' && changes.darkMode) {
+        const newDarkMode = changes.darkMode.newValue;
+        setIsDarkMode(newDarkMode);
+        applyDarkMode(newDarkMode);
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -42,7 +57,7 @@ const ReadBuddyNotesPage = () => {
       setSavedItems(updatedItems);
 
       chrome.storage.local.set({ savedItems: updatedItems }, () => {
-        console.log("✅ Item deleted from chrome.storage.local");
+        console.log("Item deleted from chrome.storage.local");
       });
     }
   };
@@ -213,7 +228,7 @@ const ReadBuddyNotesPage = () => {
           label="Saved Notes" 
           active={activeTab === 'saved'}
           onClick={() => setActiveTab('saved')}
-          count={savedItems.filter(item => item.category === 'saved').length}
+          count={savedItems.length}
         />
         <NavItem 
           icon={Clock} 

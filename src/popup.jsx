@@ -11,6 +11,49 @@ const Popup = () => {
 
   const [isEnabled, setIsEnabled] = useState(null); 
   const [isDarkMode, setIsDarkMode] = useState("");
+  const [os, setOS] = useState("Unknown OS");
+  const [shortcuts, setShortcuts] = useState({
+    summarize: "",
+    translate: "",
+    explain: "",
+    chat: "",
+  });
+
+  useEffect(() => {
+    function getOS() {
+      const userAgent = window.navigator.userAgent,
+          platform = window.navigator?.userAgentData?.platform || window.navigator.platform,
+          macosPlatforms = ['macOS', 'Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'],
+          windowsPlatforms = ['Win32', 'Win64', 'Windows', 'WinCE'],
+          iosPlatforms = ['iPhone', 'iPad', 'iPod'];
+      let os = null;
+
+      if (macosPlatforms.indexOf(platform) !== -1) {
+        os = 'Mac OS';
+      } else if (iosPlatforms.indexOf(platform) !== -1) {
+        os = 'iOS';
+      } else if (windowsPlatforms.indexOf(platform) !== -1) {
+        os = 'Windows';
+      } else if (/Android/.test(userAgent)) {
+        os = 'Android';
+      } else if (/Linux/.test(platform)) {
+        os = 'Linux';
+      } else {
+        os = 'Unknown OS';
+      }
+
+      return os;
+    }
+    const detectedOS = getOS();
+    setOS(detectedOS);
+    console.log("Detected OS:", detectedOS);
+
+    chrome.storage.local.get("shortcuts", (data) => {
+      if (data.shortcuts) {
+        setShortcuts(data.shortcuts);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     chrome.storage.local.set({ isEnabled });
@@ -28,7 +71,7 @@ const Popup = () => {
   }, []);
 
   useEffect(() => {
-    loadDarkMode((isDark) => {
+    loadDarkMode((isDark) => { 
       setIsDarkMode(isDark);
     });
 
@@ -45,11 +88,11 @@ const Popup = () => {
     saveDarkMode(newDarkMode);
   };
 
-  const handleToggle = () => {
-    const newValue = !isEnabled;
-    setIsEnabled(newValue);
-    chrome.storage.local.set({ isEnabled: newValue });
-  };
+  // const handleToggle = () => {
+  //   const newValue = !isEnabled;
+  //   setIsEnabled(newValue);
+  //   chrome.storage.local.set({ isEnabled: newValue });
+  // };
 
   const openSidePanel = (tabName) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -70,12 +113,28 @@ const Popup = () => {
     window.close();
   };
 
+  const formatShortcut = (shortcut) => {
+    if (!shortcut) return "";
+    if (os === "Mac OS") {
+      return shortcut
+        .replace(/Alt\+/g, "⌥")
+        .replace(/Shift\+/g, "⇧")
+        .replace(/Ctrl\+/g, "⌃")
+        .replace(/Command\+/g, "⌘");
+    } else {
+      return shortcut
+        .replace(/⌥/g, "Alt+")
+        .replace(/⇧/g, "Shift+")
+        .replace(/⌃/g, "Ctrl+")
+        .replace(/⌘/g, "Meta+");
+    }
+  };
+
   const actions = [
     {
       id: 'summarize',
       title: 'Summarize',
       icon: '📝',
-      shortcut: 'Alt+Shift+S',
       gradient: 'from-violet-50 to-purple-50 dark:from-violet-900 dark:to-purple-800',
       hoverGradient: 'hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-800 dark:hover:to-purple-700',
       border: 'border-violet-200 dark:border-violet-700'
@@ -84,7 +143,6 @@ const Popup = () => {
       id: 'translate',
       title: 'Translate',
       icon: '🌐',
-      shortcut: 'Alt+Shift+T',
       gradient: 'from-emerald-50 to-teal-50 dark:from-emerald-900 dark:to-teal-800',
       hoverGradient: 'hover:from-emerald-100 hover:to-teal-100 dark:hover:from-emerald-800 dark:hover:to-teal-700',
       border: 'border-emerald-200 dark:border-emerald-700'
@@ -93,7 +151,6 @@ const Popup = () => {
       id: 'explain',
       title: 'Explain',
       icon: '💡',
-      shortcut: 'Alt+Shift+E',
       gradient: 'from-blue-50 to-cyan-50 dark:from-blue-900 dark:to-cyan-800',
       hoverGradient: 'hover:from-blue-100 hover:to-cyan-100 dark:hover:from-blue-800 dark:hover:to-cyan-700',
       border: 'border-blue-200 dark:border-blue-700'
@@ -102,7 +159,6 @@ const Popup = () => {
       id: 'chat',
       title: 'Chat',
       icon: '💬',
-      shortcut: 'Alt+Shift+C',
       gradient: 'from-pink-50 to-rose-50 dark:from-pink-900 dark:to-rose-800',
       hoverGradient: 'hover:from-pink-100 hover:to-rose-100 dark:hover:from-pink-800 dark:hover:to-rose-700',
       border: 'border-pink-200 dark:border-pink-700'
@@ -196,7 +252,7 @@ const Popup = () => {
       </div>
 
       {/* Quick Actions */}
-      <div className="p-4">
+      <div className="p-4 pb-6">
         <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3">QUICK ACTIONS</div>
         <div className="space-y-1.5">
           {actions.map((action) => (
@@ -210,7 +266,7 @@ const Popup = () => {
                 <span className="font-medium text-gray-900 dark:text-gray-100">{action.title}</span>
               </div>
               <div className="flex items-center space-x-2">
-                <span className="text-xs text-gray-400 dark:text-gray-300 font-mono">{action.shortcut}</span>
+                <span className="text-xs text-gray-400 dark:text-gray-300 font-mono">{formatShortcut(shortcuts[action.id])}</span>
                 <svg className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-gray-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
@@ -221,7 +277,7 @@ const Popup = () => {
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+      <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
           <span>Chrome API</span>
           <span>Version 1.0.0</span>

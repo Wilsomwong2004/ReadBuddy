@@ -1,128 +1,355 @@
 import './content.css'
 
 let selectedText = '';
-let isReadBuddyActive = false;
+let isEnabled = true;
+let isTooltipVisible = false;
+let isDarkMode = false;
 
-document.addEventListener('mouseup', () => {
+// Check if extension context is valid
+function isExtensionContextValid() {
+  try {
+    return chrome.runtime && chrome.runtime.id;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Safe chrome.runtime.sendMessage with context check
+function safeSendMessage(message, callback) {
+  if (!isExtensionContextValid()) {
+    console.warn('[Content] Extension context invalidated. Please refresh the page.');
+    showExtensionReloadNotification();
+    return false;
+  }
+  
+  try {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[Content] Runtime error:', chrome.runtime.lastError.message);
+        if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+          showExtensionReloadNotification();
+        }
+      } else if (callback) {
+        callback(response);
+      }
+    });
+    return true;
+  } catch (error) {
+    console.error('[Content] Error sending message:', error);
+    showExtensionReloadNotification();
+    return false;
+  }
+}
+
+// Show notification to refresh page
+function showExtensionReloadNotification() {
+  // Only show once
+  if (document.getElementById('readbuddy-reload-notification')) {
+    return;
+  }
+  
+  const notification = document.createElement('div');
+  notification.id = 'readbuddy-reload-notification';
+  notification.innerHTML = `
+    <div style="
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #fee2e2;
+      border: 2px solid #ef4444;
+      color: #991b1b;
+      padding: 12px 16px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 10000000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      max-width: 300px;
+    ">
+      <div style="font-weight: 600; margin-bottom: 4px;">⚠️ ReadBuddy Updated</div>
+      <div style="font-size: 13px; margin-bottom: 8px;">Please refresh this page to use the latest version.</div>
+      <button onclick="location.reload()" style="
+        background: #ef4444;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+      ">
+        Refresh Now
+      </button>
+      <button onclick="this.parentElement.parentElement.remove()" style="
+        background: transparent;
+        color: #991b1b;
+        border: 1px solid #991b1b;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        margin-left: 8px;
+      ">
+        Dismiss
+      </button>
+    </div>
+  `;
+  document.body.appendChild(notification);
+}
+
+// Check if extension is enabled
+if (isExtensionContextValid()) {
+  chrome.storage.local.get("isEnabled", (data) => {
+    isEnabled = data.isEnabled !== false;
+    console.log('[Content] Extension enabled:', isEnabled);
+  });
+
+  // Check dark mode setting
+  chrome.storage.local.get("darkMode", (data) => {
+    isDarkMode = data.darkMode === true;
+    console.log('[Content] Dark mode:', isDarkMode);
+  });
+
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === "local" && changes.isEnabled) {
+      isEnabled = changes.isEnabled.newValue;
+      console.log('[Content] Extension enabled changed to:', isEnabled);
+      if (!isEnabled) {
+        hideQuickActions();
+      }
+    }
+    
+    if (namespace === "local" && changes.darkMode) {
+      isDarkMode = changes.darkMode.newValue;
+      console.log('[Content] Dark mode changed to:', isDarkMode);
+      // Update tooltip if visible
+      const tooltip = document.getElementById('readbuddy-tooltip');
+      if (tooltip) {
+        if (isDarkMode) {
+          tooltip.classList.add('dark');
+        } else {
+          tooltip.classList.remove('dark');
+        }
+      }
+    }
+  });
+
+  // Listen for dark mode changes from other parts of extension
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'darkModeChanged') {
+      isDarkMode = message.darkMode;
+      console.log('[Content] Dark mode changed via message:', isDarkMode);
+      const tooltip = document.getElementById('readbuddy-tooltip');
+      if (tooltip) {
+        if (isDarkMode) {
+          tooltip.classList.add('dark');
+        } else {
+          tooltip.classList.remove('dark');
+        }
+      }
+    }
+  });
+}
+
+// Text selection handler
+document.addEventListener('mouseup', (e) => {
+  // Don't show tooltip if extension context is invalid
+  if (!isExtensionContextValid()) {
+    return;
+  }
+
+  // Don't recreate tooltip if clicking on the tooltip itself
+  const tooltip = document.getElementById('readbuddy-tooltip');
+  if (tooltip && tooltip.contains(e.target)) {
+    console.log('[Content] Click on tooltip, ignoring mouseup');
+    return;
+  }
+
   const selection = window.getSelection();
   selectedText = selection.toString().trim();
   
+  console.log('[Content] Text selected, length:', selectedText.length);
+  
   if (selectedText && selectedText.length > 10) {
+    console.log('[Content] Showing tooltip for text:', selectedText.substring(0, 50) + '...');
     showQuickActions(selectedText);
   } else {
+    console.log('[Content] Text too short, hiding tooltip');
     hideQuickActions();
   }
 });
 
-function showQuickActions(textToPreserve) {
+function showQuickActions(text) {
   if (!isEnabled) {
-    console.log('Extension disabled — no tooltip shown.');
+    console.log('[Content] Extension disabled — no tooltip shown.');
+    return;
+  }
+
+  if (!isExtensionContextValid()) {
+    console.log('[Content] Extension context invalid — no tooltip shown.');
+    return;
+  }
+
+  // Don't recreate if already visible
+  if (isTooltipVisible) {
+    console.log('[Content] Tooltip already visible, skipping recreation');
     return;
   }
 
   hideQuickActions();
+  
   const selection = window.getSelection();
-  if (!selection.rangeCount) return;
+  if (!selection.rangeCount) {
+    console.log('[Content] No selection range found');
+    return;
+  }
   
-  const currentSelectedText = selection.toString().trim();
-  if (!currentSelectedText) return;
-  
-  const preservedText = textToPreserve || currentSelectedText;
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
   
+  console.log('[Content] Creating tooltip at position:', rect.top, rect.left);
+  
   const tooltip = document.createElement('div');
   tooltip.id = 'readbuddy-tooltip';
+  
+  // Apply dark mode class if enabled
+  if (isDarkMode) {
+    tooltip.classList.add('dark');
+  }
+  
   tooltip.innerHTML = `
     <div class="readbuddy-actions">
-      <button data-action="summarize" title="Summarize">📄</button>
-      <button data-action="translate" title="Translate">🌐</button>
-      <button data-action="explain" title="Explain">💡</button>
+      <button data-action="summarize" title="Summarize">
+        <span class="icon">📄</span>
+        <span class="label">Summarize</span>
+      </button>
+      <button data-action="translate" title="Translate">
+        <span class="icon">🌐</span>
+        <span class="label">Translate</span>
+      </button>
+      <button data-action="explain" title="Explain">
+        <span class="icon">💡</span>
+        <span class="label">Explain</span>
+      </button>
+      <button data-action="chat" title="Chat">
+        <span class="icon">💬</span>
+        <span class="label">Chat</span>
+      </button>
     </div>
   `;
   
+  // Position the tooltip
   tooltip.style.position = 'fixed';
-  tooltip.style.top = `${rect.top - 60}px`;
-  tooltip.style.left = `${rect.left + (rect.width / 2) - 100}px`;
+  tooltip.style.top = `${rect.top - 70}px`;
+  tooltip.style.left = `${rect.left + (rect.width / 2) - 180}px`;
   tooltip.style.zIndex = '999999';
   
   document.body.appendChild(tooltip);
+  isTooltipVisible = true;
+  console.log('[Content] Tooltip added to DOM with dark mode:', isDarkMode);
   
+  // Add click handlers
   const buttons = tooltip.querySelectorAll('button[data-action]');
+  console.log('[Content] Found', buttons.length, 'buttons');
+  
   buttons.forEach(button => {
     button.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       const action = button.dataset.action;
-      handleAction(action, preservedText);
+      console.log('[Content] Button clicked! Action:', action);
+      handleAction(action, text);
     });
   });
 
+  // Close tooltip when clicking outside
   setTimeout(() => {
     document.addEventListener('click', hideTooltipOnClickOutside, true);
+    document.addEventListener('mousedown', hideTooltipOnClickOutside, true);
   }, 100);
 }
 
 function hideQuickActions() {
   const existingTooltip = document.getElementById('readbuddy-tooltip');
   if (existingTooltip) {
+    console.log('[Content] Removing existing tooltip');
     existingTooltip.remove();
   }
+  isTooltipVisible = false;
   document.removeEventListener('click', hideTooltipOnClickOutside, true);
+  document.removeEventListener('mousedown', hideTooltipOnClickOutside, true);
 }
 
 function hideTooltipOnClickOutside(e) {
   const tooltip = document.getElementById('readbuddy-tooltip');
-  if (tooltip && !tooltip.contains(e.target)) {
-    hideQuickActions();
+  const loader = document.getElementById('readbuddy-loader');
+  
+  // Don't hide if clicking on tooltip or loader
+  if ((tooltip && tooltip.contains(e.target)) || (loader && loader.contains(e.target))) {
+    console.log('[Content] Click on tooltip/loader, not hiding');
+    return;
   }
+  
+  console.log('[Content] Click outside tooltip, hiding');
+  hideQuickActions();
 }
 
 async function handleAction(action, text) {
+  console.log('[Content] handleAction called with action:', action, 'text length:', text.length);
+  
+  if (!isExtensionContextValid()) {
+    console.log('[Content] Extension context invalid, cannot handle action');
+    hideQuickActions();
+    showExtensionReloadNotification();
+    return;
+  }
+  
   hideQuickActions();
   
-  if (!text) return;
+  if (!text) {
+    console.log('[Content] No text provided, aborting');
+    return;
+  }
   
   showLoadingIndicator();
-   chrome.runtime.sendMessage({
+  
+  console.log('[Content] Sending message to background:', {
+    type: 'open-sidepanel',
+    action,
+    textPreview: text.substring(0, 50) + '...'
+  });
+  
+  // Send message to background to open sidepanel
+  const sent = safeSendMessage({
     type: 'open-sidepanel',
     action,
     text
+  }, (response) => {
+    console.log('[Content] Response from background:', response);
   });
   
-  setTimeout(hideLoadingIndicator, 1000);
+  if (!sent) {
+    hideLoadingIndicator();
+  } else {
+    setTimeout(hideLoadingIndicator, 1000);
+  }
 }
 
-// async function callSidebar(action, text) {
-//   const sidebar = document.getElementById('readbuddy-sidebar');
-//   if (sidebar) {
-//     sidebar.style.display = 'block'; 
-//   } else {
-//     console.warn('ReadBuddy sidebar not found');
-//   }
-
-//   const inputBox = document.querySelector('#readbuddy-sidebar textarea, #readbuddy-sidebar input');
-//   if (inputBox) {
-//     inputBox.value = text;
-//     inputBox.dispatchEvent(new Event('input', { bubbles: true })); 
-//   } else {
-//     console.warn('No input box found inside ReadBuddy sidebar');
-//   }
-
-//   if (action) {
-//     console.log(`Action: ${action}, text pasted into sidebar.`);
-//   }
-
-//   return text; 
-// }
-
 function showLoadingIndicator() {
+  console.log('[Content] Showing loading indicator');
   const loader = document.createElement('div');
   loader.id = 'readbuddy-loader';
+  
+  // Apply dark mode class if enabled
+  if (isDarkMode) {
+    loader.classList.add('dark');
+  }
+  
   loader.innerHTML = `
     <div class="readbuddy-spinner">
       <div class="spinner"></div>
-      <span>Processing...</span>
+      <span>Opening ReadBuddy...</span>
     </div>
   `;
   loader.style.position = 'fixed';
@@ -134,147 +361,19 @@ function showLoadingIndicator() {
 }
 
 function hideLoadingIndicator() {
+  console.log('[Content] Hiding loading indicator');
   const loader = document.getElementById('readbuddy-loader');
   if (loader) {
     loader.remove();
   }
 }
 
-function showResult(title, content) {
-  hideResult();
-  
-  const resultPanel = document.createElement('div');
-  resultPanel.id = 'readbuddy-result';
-  resultPanel.innerHTML = `
-    <div class="readbuddy-result-panel">
-      <div class="readbuddy-result-header">
-        <h3>${title}</h3>
-        <button class="readbuddy-close" title="Close">×</button>
-      </div>
-      <div class="readbuddy-result-content">
-        <p>${content}</p>
-      </div>
-      <div class="readbuddy-result-actions">
-        <button class="readbuddy-copy" title="Copy to clipboard">Copy</button>
-        <button class="readbuddy-speak" title="Read aloud">🔊</button>
-      </div>
-    </div>
-  `;
-  
-  resultPanel.style.position = 'fixed';
-  resultPanel.style.top = '20px';
-  resultPanel.style.right = '20px';
-  resultPanel.style.zIndex = '1000000';
-  resultPanel.style.maxWidth = '400px';
-  
-  document.body.appendChild(resultPanel);
-  
-  const closeBtn = resultPanel.querySelector('.readbuddy-close');
-  closeBtn.addEventListener('click', hideResult);
-  
-  const copyBtn = resultPanel.querySelector('.readbuddy-copy');
-  copyBtn.addEventListener('click', () => copyToClipboard(content));
-  
-  const speakBtn = resultPanel.querySelector('.readbuddy-speak');
-  speakBtn.addEventListener('click', () => speakText(content));
-  
-  setTimeout(() => {
-    hideResult();
-  }, 10000);
-}
-
-function hideResult() {
-  const result = document.getElementById('readbuddy-result');
-  if (result) {
-    result.remove();
-  }
-}
-
-function showErrorMessage(message) {
-  const errorPanel = document.createElement('div');
-  errorPanel.id = 'readbuddy-error';
-  errorPanel.innerHTML = `
-    <div class="readbuddy-error-panel">
-      <span class="readbuddy-error-icon">⚠️</span>
-      <span>${message}</span>
-      <button class="readbuddy-close" title="Close">×</button>
-    </div>
-  `;
-  
-  errorPanel.style.position = 'fixed';
-  errorPanel.style.top = '20px';
-  errorPanel.style.right = '20px';
-  errorPanel.style.zIndex = '1000000';
-  
-  document.body.appendChild(errorPanel);
-  
-  const closeBtn = errorPanel.querySelector('.readbuddy-close');
-  closeBtn.addEventListener('click', () => errorPanel.remove());
-  
-  setTimeout(() => {
-    if (document.body.contains(errorPanel)) {
-      errorPanel.remove();
-    }
-  }, 5000);
-}
-
-// Utility functions
-async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    showTemporaryMessage('Copied to clipboard!');
-  } catch (err) {
-    console.error('Failed to copy text: ', err);
-  }
-}
-
-function speakText(text) {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.8;
-    utterance.pitch = 1;
-    speechSynthesis.speak(utterance);
-  } else {
-    showErrorMessage('Text-to-speech is not supported in this browser.');
-  }
-}
-
-function showTemporaryMessage(message) {
-  const msgElement = document.createElement('div');
-  msgElement.textContent = message;
-  msgElement.style.cssText = `
-    position: fixed;
-    top: 60px;
-    right: 20px;
-    background: #4CAF50;
-    color: white;
-    padding: 10px 15px;
-    border-radius: 4px;
-    z-index: 1000001;
-    font-size: 14px;
-  `;
-  
-  document.body.appendChild(msgElement);
-  
-  setTimeout(() => {
-    if (document.body.contains(msgElement)) {
-      msgElement.remove();
-    }
-  }, 2000);
-}
-
+// Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  if (e.ctrlKey && e.shiftKey && e.key === 'R') {
-    e.preventDefault();
-    isReadBuddyActive = !isReadBuddyActive;
-    showTemporaryMessage(`ReadBuddy ${isReadBuddyActive ? 'activated' : 'deactivated'}`);
-  }
-  
   if (e.key === 'Escape') {
+    console.log('[Content] Escape pressed, hiding tooltip');
     hideQuickActions();
-    hideResult();
   }
 });
 
-console.log('ReadBuddy extension loaded successfully!');
-isReadBuddyActive = true;
+console.log('[Content] ReadBuddy extension loaded successfully!');

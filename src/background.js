@@ -1,3 +1,15 @@
+let isSettingShortcut = false;
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === "setting-shortcut-start") {
+    isSettingShortcut = true;
+    console.log("[commands] Shortcut setting started");
+  } else if (message.type === "setting-shortcut-end") {
+    isSettingShortcut = false;
+    console.log("[commands] Shortcut setting ended");
+  }
+});
+
 const COMMAND_ACTION_MAP = {
   'open-summarize': 'summarize',
   'open-translate': 'translate',
@@ -34,6 +46,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // Handle keyboard shortcuts
 chrome.commands.onCommand.addListener((command) => {
+  if (isSettingShortcut) {
+    console.log("[commands] Ignored because user is setting shortcut");
+    return;
+  }
+
   console.log("[commands] Triggered command:", command);
 
   const action = COMMAND_ACTION_MAP[command];
@@ -72,19 +89,29 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  console.log("Background got message:", msg);
+  console.log("[Background] Received message:", msg);
+  console.log("[Background] Sender tab ID:", sender.tab?.id);
   
   if (msg.type === 'open-sidepanel') {
+    console.log("[Background] Opening sidepanel for action:", msg.action);
+    console.log("[Background] Text length:", msg.text?.length);
+    
     chrome.sidePanel.open({tabId: sender.tab.id}, () => {
+      console.log("[Background] Sidepanel opened, sending message after 200ms delay");
+      
       setTimeout(() => {
         chrome.runtime.sendMessage({
           type: 'open-sidepanel',
           action: msg.action,
           text: msg.text
+        }, (response) => {
+          console.log("[Background] Message sent to sidepanel, response:", response);
         });
       }, 200);
     });
   }
+  
+  return true;
 });
 
 

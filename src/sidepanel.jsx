@@ -72,6 +72,58 @@ const SidePanel = () => {
     });
   }, []);
 
+  useEffect(() => {
+    const handleMessage = (message, sender, sendResponse) => {
+      console.log('[Sidebar] Received message:', message);
+      console.log('[Sidebar] Message type:', message.type);
+      console.log('[Sidebar] Message action:', message.action);
+      console.log('[Sidebar] Message text length:', message.text?.length);
+      
+      if (
+          message.type === 'set-action' || 
+          message.type === 'open-sidepanel' || 
+          message.type === 'open-sidepanel-from-command'
+      ) {
+        console.log(`[Sidebar] Setting active tab to: ${message.action}`);
+        setActiveTab(message.action);
+        
+        if (message.type === 'open-sidepanel' && message.text) {
+          const text = message.text;
+          console.log('[Sidebar] Setting selected text:', text.substring(0, 50) + '...');
+          setSelectedText(text);
+          
+          // Auto-process for non-chat actions
+          if (message.action !== 'chat') {
+            console.log('[Sidebar] Auto-processing text for action:', message.action);
+            // Small delay to ensure state is updated
+            setTimeout(() => {
+              console.log('[Sidebar] Calling processText now');
+              processText(message.action, text);
+            }, 300);
+          } else {
+            console.log('[Sidebar] Chat action - setting current message');
+            // For chat, just put text in the message box
+            setCurrentMessage(text);
+          }
+        } else {
+          console.log('[Sidebar] No text in message or wrong type');
+        }
+      }
+      
+      sendResponse({received: true});
+    };
+
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      console.log('[Sidebar] Adding message listener');
+      chrome.runtime.onMessage.addListener(handleMessage);
+      
+      return () => {
+        console.log('[Sidebar] Removing message listener');
+        chrome.runtime.onMessage.removeListener(handleMessage);
+      };
+    }
+  }, []);
+
   // const handleSave = () => {
   //   setActivePanel("save");
   // };
