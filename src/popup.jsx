@@ -9,16 +9,29 @@ const Popup = () => {
     notes: 0,
   });
 
-  const [isEnabled, setIsEnabled] = useState(true);
+  const [isEnabled, setIsEnabled] = useState(null); 
   const [isDarkMode, setIsDarkMode] = useState("");
+
+  useEffect(() => {
+    chrome.storage.local.set({ isEnabled });
+  }, [isEnabled]);
+
+  useEffect(() => {
+    chrome.storage.local.get(["isEnabled"], (result) => {
+      if (typeof result.isEnabled === "boolean") {
+        setIsEnabled(result.isEnabled);
+      } else {
+        setIsEnabled(true);
+        chrome.storage.local.set({ isEnabled: true });
+      }
+    });
+  }, []);
 
   useEffect(() => {
     loadDarkMode((isDark) => {
       setIsDarkMode(isDark);
     });
-  }, []);
 
-  useEffect(() => {
     chrome.storage.local.get(["savedItems"], (result) => {
       const savedItems = result.savedItems || [];
       setStats({ notes: savedItems.length });
@@ -30,6 +43,12 @@ const Popup = () => {
     setIsDarkMode(newDarkMode);
     applyDarkMode(newDarkMode);
     saveDarkMode(newDarkMode);
+  };
+
+  const handleToggle = () => {
+    const newValue = !isEnabled;
+    setIsEnabled(newValue);
+    chrome.storage.local.set({ isEnabled: newValue });
   };
 
   const openSidePanel = (tabName) => {
@@ -56,7 +75,7 @@ const Popup = () => {
       id: 'summarize',
       title: 'Summarize',
       icon: '📝',
-      shortcut: 'Ctrl+Shift+S',
+      shortcut: 'Alt+Shift+S',
       gradient: 'from-violet-50 to-purple-50 dark:from-violet-900 dark:to-purple-800',
       hoverGradient: 'hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-800 dark:hover:to-purple-700',
       border: 'border-violet-200 dark:border-violet-700'
@@ -65,7 +84,7 @@ const Popup = () => {
       id: 'translate',
       title: 'Translate',
       icon: '🌐',
-      shortcut: 'Ctrl+Shift+T',
+      shortcut: 'Alt+Shift+T',
       gradient: 'from-emerald-50 to-teal-50 dark:from-emerald-900 dark:to-teal-800',
       hoverGradient: 'hover:from-emerald-100 hover:to-teal-100 dark:hover:from-emerald-800 dark:hover:to-teal-700',
       border: 'border-emerald-200 dark:border-emerald-700'
@@ -74,7 +93,7 @@ const Popup = () => {
       id: 'explain',
       title: 'Explain',
       icon: '💡',
-      shortcut: 'Ctrl+Shift+E',
+      shortcut: 'Alt+Shift+E',
       gradient: 'from-blue-50 to-cyan-50 dark:from-blue-900 dark:to-cyan-800',
       hoverGradient: 'hover:from-blue-100 hover:to-cyan-100 dark:hover:from-blue-800 dark:hover:to-cyan-700',
       border: 'border-blue-200 dark:border-blue-700'
@@ -83,7 +102,7 @@ const Popup = () => {
       id: 'chat',
       title: 'Chat',
       icon: '💬',
-      shortcut: 'Ctrl+Shift+C',
+      shortcut: 'Alt+Shift+C',
       gradient: 'from-pink-50 to-rose-50 dark:from-pink-900 dark:to-rose-800',
       hoverGradient: 'hover:from-pink-100 hover:to-rose-100 dark:hover:from-pink-800 dark:hover:to-rose-700',
       border: 'border-pink-200 dark:border-pink-700'
@@ -92,9 +111,8 @@ const Popup = () => {
 
   return (
     <div className="w-80 bg-white dark:bg-gray-900 dark:text-gray-100 transition-colors">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between mt-2 mb-5">
+      <div className="p-4 pb-0 border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between mt-2">
           <div className="flex items-center space-x-2">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center dark:bg-gray-900">
               <BookOpen className="w-7 h-7 text-blue-600" />
@@ -122,10 +140,9 @@ const Popup = () => {
             </button>
           </div>
         </div>
-
-        {/* Enable/Disable Toggle */}
+{/* 
         <button
-          onClick={() => setIsEnabled(!isEnabled)}
+          onClick={handleToggle}
           className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-all ${
             isEnabled
               ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
@@ -134,28 +151,38 @@ const Popup = () => {
         >
           <div className="flex items-center space-x-2">
             <div className={`w-2 h-2 rounded-full ${isEnabled ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-            <span className={`text-sm font-medium ${isEnabled ? 'text-green-700 dark:text-green-300' : 'text-gray-600 dark:text-gray-400'}`}>
+            <span
+              className={`text-sm font-medium ${
+                isEnabled
+                  ? 'text-green-700 dark:text-green-300'
+                  : 'text-gray-600 dark:text-gray-400'
+              }`}
+            >
               {isEnabled ? 'ReadBuddy Active' : 'ReadBuddy Disabled'}
             </span>
           </div>
-          <div className={`text-xs px-2 py-1 rounded ${
-            isEnabled
-              ? 'bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-          }`}>
+          <div
+            className={`text-xs px-2 py-1 rounded ${
+              isEnabled
+                ? 'bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+            }`}
+          >
             {isEnabled ? 'ON' : 'OFF'}
           </div>
-        </button>
+        </button> */}
       </div>
 
       {/* Notes Section */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3">NOTES</div>
         <button
           onClick={openNotes}
           aria-label="Open notes"
           className="w-full flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900 dark:to-orange-800 border border-amber-200 dark:border-amber-700 hover:from-amber-100 hover:to-orange-100 dark:hover:from-amber-800 dark:hover:to-orange-700 transition-all group"
         >
           <div className="flex items-center space-x-3">
+            
             <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xl">📒</div>
             <div className="text-left">
               <div className="font-semibold text-gray-900 dark:text-gray-100">My Notes</div>

@@ -15,6 +15,11 @@ document.addEventListener('mouseup', () => {
 });
 
 function showQuickActions(textToPreserve) {
+  if (!isEnabled) {
+    console.log('Extension disabled — no tooltip shown.');
+    return;
+  }
+
   hideQuickActions();
   const selection = window.getSelection();
   if (!selection.rangeCount) return;

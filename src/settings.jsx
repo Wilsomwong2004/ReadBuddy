@@ -33,19 +33,36 @@ const ReadBuddySettings = () => {
   }, []);
 
   useEffect(() => {
-    const getOS = () => {
-      const platform = navigator.platform.toLowerCase();
-      if (platform.includes("mac")) return "mac";
-      if (platform.includes("win")) return "windows";
-      if (/linux/.test(platform)) return "linux";
-      return "unknown";
-    };
+    function getOS() {
+      const userAgent = window.navigator.userAgent,
+          platform = window.navigator?.userAgentData?.platform || window.navigator.platform,
+          macosPlatforms = ['macOS', 'Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'],
+          windowsPlatforms = ['Win32', 'Win64', 'Windows', 'WinCE'],
+          iosPlatforms = ['iPhone', 'iPad', 'iPod'];
+      let os = null;
+
+      if (macosPlatforms.indexOf(platform) !== -1) {
+        os = 'Mac OS';
+      } else if (iosPlatforms.indexOf(platform) !== -1) {
+        os = 'iOS';
+      } else if (windowsPlatforms.indexOf(platform) !== -1) {
+        os = 'Windows';
+      } else if (/Android/.test(userAgent)) {
+        os = 'Android';
+      } else if (/Linux/.test(platform)) {
+        os = 'Linux';
+      } else {
+        os = 'Unknown OS';
+      }
+
+      return os;
+    }
     const detectedOS = getOS();
     setOS(detectedOS);
     console.log("Detected OS:", detectedOS);
   }, []);
 
- useEffect(() => {
+  useEffect(() => {
     if (chrome?.commands) {
       chrome.commands.getAll((commands) => {
         const updatedShortcuts = { ...settings.shortcuts };
@@ -173,10 +190,10 @@ const ReadBuddySettings = () => {
       language: 'en',
       theme: 'light',
       shortcuts: {
-        summarize: 'Ctrl+Shift+S',
-        translate: 'Ctrl+Shift+T',
-        explain: 'Ctrl+Shift+E',
-        chat: 'Ctrl+Shift+C'
+        summarize: 'Alt+Shift+S',
+        translate: 'Alt+Shift+T',
+        explain: 'Alt+Shift+E',
+        chat: 'Alt+Shift+C'
       }
     };
     setSettings(defaultSettings);

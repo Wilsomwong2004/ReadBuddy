@@ -148,13 +148,13 @@ const SidePanel = () => {
   }, [chatHistory, isStreaming]);
 
   const firebaseConfig = {
-    apiKey: "AIzaSyDFsuec0hFEf8OqVgf9GjhZWdtD5fxe1-0",
-    authDomain: "readbuddy-6f546.firebaseapp.com",
-    projectId: "readbuddy-6f546",
-    storageBucket: "readbuddy-6f546.firebasestorage.app",
-    messagingSenderId: "247214116217",
-    appId: "1:247214116217:web:66f4296f937edd8edeb3a8",
-    measurementId: "G-48QG1VLXV9"
+    apiKey: import.meta.env.VITE_FIREBASE_APIKEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTHDOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECTID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGEBUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGINGSENDERID,
+    appId: import.meta.env.VITE_FIREBASE_APPID,
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENTID
   };
 
   const firebase = initializeApp(firebaseConfig);
@@ -550,6 +550,7 @@ const SidePanel = () => {
         5. Resource Guide - Recommendations to authoritative learning resources (please provide authentic references and URL links)
 
         Emphasis on accuracy and depth, suitable for professional readers.
+        not need to add the ** ** or * * text.
     `;
 
       const result = await gemini_model.generateContent(prompt);
@@ -574,6 +575,7 @@ const SidePanel = () => {
         5. Suggested directions for further study
 
         Use a friendly, understandable tone, as if you were explaining something to a friend.
+        not need to add the ** ** or * * text.
       `;
 
       const session = await LanguageModel.create({
@@ -704,6 +706,7 @@ const SidePanel = () => {
       Keep it concise; each concept should have no more than three related aspects.
       no need add **bold** or *italic* text. also no need say here are 5 core concepts.
       directly start from concept 1 to concept 5 and each conecpt have gap space.
+      not need to add the ** ** or * * text.
     `;
 
     const session = await LanguageModel.create({

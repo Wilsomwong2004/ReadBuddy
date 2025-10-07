@@ -7,15 +7,29 @@ const COMMAND_ACTION_MAP = {
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId.startsWith('readbuddy-')) {
-    // Open side panel and send action
     chrome.sidePanel.open({tabId: tab.id});
     
-    // Send message to content script
     chrome.tabs.sendMessage(tab.id, {
       action: info.menuItemId.replace('readbuddy-', ''),
       text: info.selectionText
     });
   } 
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  const { isEnabled } = await chrome.storage.local.get("isEnabled");
+  if (!isEnabled) {
+    console.log("ReadBuddy disabled — blocked.");
+    return;
+  }
+  
+  if (info.menuItemId.startsWith("readbuddy-")) {
+    chrome.sidePanel.open({ tabId: tab.id });
+    chrome.tabs.sendMessage(tab.id, {
+      action: info.menuItemId.replace("readbuddy-", ""),
+      text: info.selectionText,
+    });
+  }
 });
 
 // Handle keyboard shortcuts
