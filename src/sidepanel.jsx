@@ -72,57 +72,71 @@ const SidePanel = () => {
     });
   }, []);
 
-  useEffect(() => {
-    const handleMessage = (message, sender, sendResponse) => {
-      console.log('[Sidebar] Received message:', message);
-      console.log('[Sidebar] Message type:', message.type);
-      console.log('[Sidebar] Message action:', message.action);
-      console.log('[Sidebar] Message text length:', message.text?.length);
+useEffect(() => {
+  const handleMessage = (message, sender, sendResponse) => {
+    console.log('[Sidebar] Received message:', message);
+    console.log('[Sidebar] Message type:', message.type);
+    console.log('[Sidebar] Message action:', message.action);
+    console.log('[Sidebar] Message text length:', message.text?.length);
+    
+    if (
+        message.type === 'set-action' || 
+        message.type === 'open-sidepanel' || 
+        message.type === 'open-sidepanel-from-command'
+    ) {
+      console.log(`[Sidebar] Setting active tab to: ${message.action}`);
+      setActiveTab(message.action);
       
-      if (
-          message.type === 'set-action' || 
-          message.type === 'open-sidepanel' || 
-          message.type === 'open-sidepanel-from-command'
-      ) {
-        console.log(`[Sidebar] Setting active tab to: ${message.action}`);
-        setActiveTab(message.action);
+      if (message.type === 'open-sidepanel' && message.text) {
+        const text = message.text;
+        console.log('[Sidebar] Setting selected text:', text.substring(0, 50) + '...');
+        setSelectedText(message.text);
         
-        if (message.type === 'open-sidepanel' && message.text) {
-          const text = message.text;
-          console.log('[Sidebar] Setting selected text:', text.substring(0, 50) + '...');
-          setSelectedText(text);
+        if (message.action !== 'chat') {
+          console.log('[Sidebar] Auto-processing text for action:', message.action);
           
-          // Auto-process for non-chat actions
-          if (message.action !== 'chat') {
-            console.log('[Sidebar] Auto-processing text for action:', message.action);
-            // Small delay to ensure state is updated
-            setTimeout(() => {
-              console.log('[Sidebar] Calling processText now');
-              processText(message.action, text);
-            }, 300);
-          } else {
-            console.log('[Sidebar] Chat action - setting current message');
-            // For chat, just put text in the message box
-            setCurrentMessage(text);
-          }
+          // Wait for API support check to complete
+          const waitForAPI = setInterval(() => {
+            // Check if the relevant API is ready
+            const isReady = 
+              (message.action === 'summarize' && apiSupport.summarizer) ||
+              (message.action === 'translate' && apiSupport.translator) ||
+              (message.action === 'explain' && apiSupport.prompt);
+            
+            if (isReady) {
+              clearInterval(waitForAPI);
+              processText(message.action, message.text);
+            }
+          }, 100);
+          
+          // Timeout after 5 seconds
+          setTimeout(() => {
+            clearInterval(waitForAPI);
+            console.log('[Sidebar] API check timeout - processing anyway');
+            processText(message.action, message.text);
+          }, 5000);
         } else {
-          console.log('[Sidebar] No text in message or wrong type');
+          console.log('[Sidebar] Chat action - setting current message');
+          setCurrentMessage(text);
         }
+      } else {
+        console.log('[Sidebar] No text in message or wrong type');
       }
-      
-      sendResponse({received: true});
-    };
-
-    if (typeof chrome !== 'undefined' && chrome.runtime) {
-      console.log('[Sidebar] Adding message listener');
-      chrome.runtime.onMessage.addListener(handleMessage);
-      
-      return () => {
-        console.log('[Sidebar] Removing message listener');
-        chrome.runtime.onMessage.removeListener(handleMessage);
-      };
     }
-  }, []);
+    
+    sendResponse({received: true});
+  };
+
+  if (typeof chrome !== 'undefined' && chrome.runtime) {
+    console.log('[Sidebar] Adding message listener');
+    chrome.runtime.onMessage.addListener(handleMessage);
+    
+    return () => {
+      console.log('[Sidebar] Removing message listener');
+      chrome.runtime.onMessage.removeListener(handleMessage);
+    };
+  }
+}, [apiSupport]); 
 
   // const handleSave = () => {
   //   setActivePanel("save");
@@ -278,6 +292,7 @@ const SidePanel = () => {
     }
 
     setApiSupport(support);
+    return support; 
   };
 
   useEffect(() => {
@@ -788,29 +803,22 @@ const SidePanel = () => {
       };
     }
 
-    // Basic counts
     const charCount = text.length;
     const words = text.trim().split(/\s+/).filter(word => word.length > 0);
     const wordCount = words.length;
     
-    // Sentence count (split by .!? followed by space or end of string)
     const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
     const sentenceCount = sentences.length;
     
-    // Paragraph count (split by double newlines or single newlines)
     const paragraphs = text.split(/\n\n+|\n/).filter(p => p.trim().length > 0);
     const paragraphCount = paragraphs.length;
     
-    // Reading time (average 200-250 words per minute)
     const readingTime = Math.ceil(wordCount / 225);
 
-    // Text type detection
     const textType = detectTextType(text, wordCount);
 
-    // Entity extraction (simple version - looks for capitalized words)
     const entities = extractEntities(text);
 
-    // Difficulty assessment
     const difficulty = assessDifficulty(text, wordCount, sentenceCount);
 
     return {
@@ -828,48 +836,38 @@ const SidePanel = () => {
   const detectTextType = (text, wordCount) => {
     const lowerText = text.toLowerCase();
     
-    // Check for code patterns
     if (/function|const|let|var|class|import|export|return/.test(text) || 
         /[{}();]/.test(text) && text.split('\n').length > 3) {
       return "Code/Technical";
     }
     
-    // Check for academic/formal writing
     if (/therefore|however|furthermore|moreover|consequently|thus|hence/.test(lowerText)) {
       return "Academic/Formal";
     }
     
-    // Check for narrative/story
     if (/once upon|suddenly|finally|meanwhile|story|chapter/.test(lowerText)) {
       return "Narrative/Story";
     }
     
-    // Check for instructional
     if (/step|first|second|how to|tutorial|guide|instructions/.test(lowerText)) {
       return "Instructional";
     }
     
-    // Check for conversational
     if (/\?|\!|hey|wow|cool|awesome|i think|i feel/.test(lowerText)) {
       return "Conversational";
     }
     
-    // Default
     return wordCount < 50 ? "Short note" : "General text";
   };
 
   const extractEntities = (text) => {
-    // Find capitalized words (potential proper nouns/entities)
     const words = text.split(/\s+/);
     const entities = new Set();
     
     words.forEach((word, index) => {
-      // Remove punctuation
       const cleanWord = word.replace(/[.,!?;:()""']/g, '');
       
-      // Check if word starts with capital letter and is not at sentence start
       if (/^[A-Z][a-z]+/.test(cleanWord) && cleanWord.length > 2) {
-        // Skip common words that might be capitalized
         const commonWords = ['The', 'A', 'An', 'This', 'That', 'These', 'Those', 'I'];
         if (!commonWords.includes(cleanWord)) {
           entities.add(cleanWord);
@@ -877,22 +875,18 @@ const SidePanel = () => {
       }
     });
     
-    // Return top 5 most frequent entities
     return Array.from(entities).slice(0, 5);
   };
 
   const assessDifficulty = (text, wordCount, sentenceCount) => {
     if (wordCount === 0 || sentenceCount === 0) return "N/A";
     
-    // Calculate average words per sentence
     const avgWordsPerSentence = wordCount / sentenceCount;
     
-    // Count complex words (3+ syllables - simplified estimation)
     const words = text.split(/\s+/);
     const complexWords = words.filter(word => estimateSyllables(word) >= 3).length;
     const complexWordRatio = complexWords / wordCount;
     
-    // Simple difficulty scoring
     let score = 0;
     
     if (avgWordsPerSentence > 20) score += 2;
@@ -901,7 +895,6 @@ const SidePanel = () => {
     if (complexWordRatio > 0.2) score += 2;
     else if (complexWordRatio > 0.1) score += 1;
     
-    // Return difficulty level
     if (score >= 3) return "Advanced";
     if (score >= 2) return "Intermediate";
     return "Basic";
@@ -911,7 +904,6 @@ const SidePanel = () => {
     word = word.toLowerCase().replace(/[^a-z]/g, '');
     if (word.length <= 3) return 1;
     
-    // Simple syllable estimation
     const vowels = word.match(/[aeiouy]+/g);
     return vowels ? vowels.length : 1;
   };
@@ -1103,7 +1095,6 @@ const SidePanel = () => {
                     </div>
                   </div>
 
-                  {/* Detail Level */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-white">Detail Level</label>
                     <div className="flex gap-3">

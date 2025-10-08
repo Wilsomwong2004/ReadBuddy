@@ -16,15 +16,14 @@
 
 .readbuddy-actions {
   display: flex;
-  gap: 8px;
-  background: white;
-  padding: 8px;
-  border-radius: 12px;
+  gap: 4px;
+  background: rgb(244, 244, 244);
+  padding: 6px;
+  border-radius: 10px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
-/* Dark mode for tooltip */
 #readbuddy-tooltip.dark .readbuddy-actions {
   background: #1f2937;
   border: 1px solid #374151;
@@ -33,17 +32,17 @@
 
 .readbuddy-actions button {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 10px 14px;
+  justify-content: center;
+  padding: 12px 16px;
   border: none;
   background: white;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
-  min-width: 70px;
+  min-width: auto;
 }
+
 
 #readbuddy-tooltip.dark .readbuddy-actions button {
   background: #374151;
@@ -66,10 +65,7 @@
 }
 
 .readbuddy-actions button .label {
-  font-size: 11px;
-  font-weight: 500;
-  color: #333;
-  white-space: nowrap;
+  display: none; 
 }
 
 #readbuddy-tooltip.dark .readbuddy-actions button .label {

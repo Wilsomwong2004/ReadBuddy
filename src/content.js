@@ -191,7 +191,6 @@ function showQuickActions(text) {
     return;
   }
 
-  // Don't recreate if already visible
   if (isTooltipVisible) {
     console.log('[Content] Tooltip already visible, skipping recreation');
     return;
@@ -213,28 +212,24 @@ function showQuickActions(text) {
   const tooltip = document.createElement('div');
   tooltip.id = 'readbuddy-tooltip';
   
-  // Apply dark mode class if enabled
+  // Apply Tailwind dark mode class
   if (isDarkMode) {
-    tooltip.classList.add('dark');
+    tooltip.className = 'dark';
   }
   
   tooltip.innerHTML = `
-    <div class="readbuddy-actions">
-      <button data-action="summarize" title="Summarize">
+    <div class="readbuddy-actions ${isDarkMode ? 'dark:bg-gray-800 dark:border-gray-700' : ''}">
+      <button data-action="summarize" title="Summarize" class="${isDarkMode ? 'dark:bg-gray-700 dark:hover:bg-blue-900' : ''}">
         <span class="icon">📄</span>
-        <span class="label">Summarize</span>
       </button>
-      <button data-action="translate" title="Translate">
+      <button data-action="translate" title="Translate" class="${isDarkMode ? 'dark:bg-gray-700 dark:hover:bg-green-900' : ''}">
         <span class="icon">🌐</span>
-        <span class="label">Translate</span>
       </button>
-      <button data-action="explain" title="Explain">
+      <button data-action="explain" title="Explain" class="${isDarkMode ? 'dark:bg-gray-700 dark:hover:bg-yellow-900' : ''}">
         <span class="icon">💡</span>
-        <span class="label">Explain</span>
       </button>
-      <button data-action="chat" title="Chat">
+      <button data-action="chat" title="Chat" class="${isDarkMode ? 'dark:bg-gray-700 dark:hover:bg-purple-900' : ''}">
         <span class="icon">💬</span>
-        <span class="label">Chat</span>
       </button>
     </div>
   `;
@@ -242,7 +237,7 @@ function showQuickActions(text) {
   // Position the tooltip
   tooltip.style.position = 'fixed';
   tooltip.style.top = `${rect.top - 70}px`;
-  tooltip.style.left = `${rect.left + (rect.width / 2) - 180}px`;
+  tooltip.style.left = `${rect.left + (rect.width / 2) - 100}px`; // Adjusted for smaller width
   tooltip.style.zIndex = '999999';
   
   document.body.appendChild(tooltip);
@@ -263,7 +258,6 @@ function showQuickActions(text) {
     });
   });
 
-  // Close tooltip when clicking outside
   setTimeout(() => {
     document.addEventListener('click', hideTooltipOnClickOutside, true);
     document.addEventListener('mousedown', hideTooltipOnClickOutside, true);
