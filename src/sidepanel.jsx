@@ -31,6 +31,7 @@ const SidePanel = () => {
   const [activePanel, setActivePanel] = useState(null);
   const [showSavedMsg, setShowSavedMsg] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
+  const [pageMetadata, setPageMetadata] = useState([]);
 
   const[favorite, setFavorite] = useState(false);
   const [readingLater, setReadingLater] = useState(false);
@@ -49,6 +50,7 @@ const SidePanel = () => {
   });
 
   let noteSpaces = []; 
+  let isExtractButtonClicked = false;
 
   useEffect(() => {
     checkAPISupport();
@@ -326,49 +328,155 @@ useEffect(() => {
   }, [activeTab]);
 
   const extractPageContent = async () => {
+    isExtractButtonClicked = true;
+
     try {
+      setIsLoading(true);
+      setResult('🔄 Extracting page content...');
+
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         
+        const cacheKey = `page_${tab.id}_${tab.url}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        
+        if (cached) {
+          const { content, metadata, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < 5 * 60 * 1000) {
+            console.log('✅ Using cached content');
+            setSelectedText(content);
+            setPageMetadata(metadata);
+            setResult('✅ Page content loaded from cache');
+            setIsLoading(false);
+            return { content, metadata };
+          }
+        }
+
         const results = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          function: () => {
-            const selectors = [
-              'article',
-              '[role="main"]',
-              '.content',
-              '.post-content', 
-              '.entry-content',
-              'main',
-              '#content'
-            ];
-            
-            for (const selector of selectors) {
-              const element = document.querySelector(selector);
-              if (element && element.innerText.trim()) {
-                return element.innerText.trim();
-              }
-            }
-            
-            const bodyText = document.body.innerText;
-            return bodyText.trim();
-          }
+          function: extractWithReadability
         });
 
         if (results && results[0] && results[0].result) {
-          const content = results[0].result.substring(0, 5000); 
+          const { content, metadata } = results[0].result;
+          
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            content,
+            metadata,
+            timestamp: Date.now()
+          }));
 
-          if (activeTab === 'chat'){
-            setCurrentMessage(content);
-          } else {
-            setSelectedText(content);
-          }
+          setSelectedText(content);
+          setPageMetadata(metadata);
+          
+          console.log('📄 Extracted:', {
+            title: metadata.title,
+            length: content.length,
+            words: content.split(/\s+/).length
+          });
+
+          // setResult(`✅ Extracted ${content.length.toLocaleString()} characters from page`);
+          setIsLoading(false);
+          return { content, metadata };
         }
       }
     } catch (error) {
-      console.error('Error extracting page content:', error);
+      console.error('❌ Error extracting page content:', error);
+      setResult(`❌ Failed to extract: ${error.message}`);
+      setIsLoading(false);
+      return null;
     }
   };
+
+  function extractWithReadability() {
+    try {
+      const documentClone = document.cloneNode(true);
+      
+      if (typeof Readability !== 'undefined') {
+        const article = new Readability(documentClone, {
+          debug: false,
+          maxElemsToParse: 0,
+          nbTopCandidates: 5,
+          charThreshold: 500
+        }).parse();
+
+        if (article) {
+          return {
+            content: article.textContent,
+            metadata: {
+              title: article.title,
+              byline: article.byline,
+              excerpt: article.excerpt,
+              siteName: article.siteName,
+              length: article.textContent.length,
+              publishedTime: article.publishedTime
+            }
+          };
+        }
+      }
+
+      const selectors = [
+        'article',
+        '[role="main"]',
+        '.content',
+        '.post-content', 
+        '.entry-content',
+        'main',
+        '#content'
+      ];
+      
+      for (const selector of selectors) {
+        const element = document.querySelector(selector);
+        if (element && element.innerText.trim()) {
+          return {
+            content: element.innerText.trim(),
+            metadata: {
+              title: document.title,
+              length: element.innerText.length
+            }
+          };
+        }
+      }
+      
+      const bodyText = document.body.innerText.trim();
+      return {
+        content: bodyText,
+        metadata: {
+          title: document.title,
+          length: bodyText.length
+        }
+      };
+    } catch (error) {
+      console.error('Extraction error:', error);
+      return {
+        content: document.body.innerText.trim(),
+        metadata: { title: document.title }
+      };
+    }
+  }
+
+  const chunkText = (text, maxChunkSize = 4000) => {
+    const chunks = [];
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+    
+    let currentChunk = '';
+    
+    for (const sentence of sentences) {
+      if ((currentChunk + sentence).length > maxChunkSize && currentChunk) {
+        chunks.push(currentChunk.trim());
+        currentChunk = sentence;
+      } else {
+        currentChunk += sentence;
+      }
+    }
+    
+    if (currentChunk) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    return chunks;
+  };
+
 
   // Drag and Drop handlers
   // const handleDragEnter = (e) => {
@@ -469,11 +577,51 @@ useEffect(() => {
       const config = detailConfig[detailLevel];
       const format = formatConfig[summaryMode];
 
+      if (isExtractButtonClicked) {
+        setResult('📄 Summarizing full page content...');
+
+        const chunks = chunkText(text, 4000);
+        console.log(`📊 Split into ${chunks.length} chunks`);
+
+        const chunkSummaries = [];
+
+        for (let i = 0; i < chunks.length; i++) {
+          setResult(`🔄 Processing section ${i + 1}/${chunks.length}...`);
+
+          isExtractButtonClicked = false;
+          const chunkSummary = await summarizeText(chunks[i]);
+          isExtractButtonClicked = true;
+
+          const cleanSummary = chunkSummary
+            .replace(/\*\*Summary.*?\*\*\n\n/g, '')
+            .trim();
+
+          chunkSummaries.push(cleanSummary);
+        }
+
+        setResult('✨ Combining all section summaries...');
+        const combinedSummaries = chunkSummaries.join('\n\n');
+
+        let finalSummary;
+        if (combinedSummaries.split(/\s+/).length > 2000) {
+          isExtractButtonClicked = false;
+          finalSummary = await summarizeText(combinedSummaries);
+          isExtractButtonClicked = true;
+        } else {
+          finalSummary = combinedSummaries;
+        }
+
+        const result = `**Full Page Summary (${detailLevel.charAt(0).toUpperCase() + detailLevel.slice(1)} - ${summaryMode === 'bullets' ? 'Bullet Points' : summaryMode === 'paragraph' ? 'Paragraph' : 'Q&A'})**\n\n${finalSummary}\n\n---\n*Processed ${chunks.length} sections*`;
+
+        setResult(result);
+        return result;
+      }
+
       const summarizer = await Summarizer.create({
         type: config.type,
         format: format,
         length: config.length,
-        outputLanguage: 'en', 
+        outputLanguage: 'en',
         monitor(m) {
           m.addEventListener('downloadprogress', (e) => {
             const percent = Math.round((e.loaded / e.total) * 100);
@@ -484,7 +632,7 @@ useEffect(() => {
 
       let summary = await summarizer.summarize(text, { outputLanguage: "en" });
       summarizer.destroy();
-      
+
       if (summaryMode === 'bullets' && !summary.includes('•') && !summary.includes('-')) {
         const sentences = summary.split(/[.!?]+/).filter(s => s.trim().length > 10);
         summary = sentences.slice(0, detailLevel === 'concise' ? 3 : detailLevel === 'standard' ? 5 : 7)
@@ -518,7 +666,6 @@ useEffect(() => {
         });
 
         const extraQA = await session.prompt(prompt);
-
         summary = `**In-Depth Q&A Based on Summary:**\n${extraQA}`;
       }
 
@@ -529,7 +676,7 @@ useEffect(() => {
 
       const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
       const pointCount = detailLevel === 'concise' ? 3 : detailLevel === 'standard' ? 5 : 7;
-      
+
       let fallbackSummary;
       if (summaryMode === 'bullets') {
         fallbackSummary = sentences.slice(0, pointCount).map(s => `• ${s.trim()}`).join('\n');

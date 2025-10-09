@@ -13,7 +13,8 @@ export default defineConfig({
         settings: resolve(__dirname,'settings.html'),
         notes: resolve(__dirname, 'notes.html'),
         content: resolve(__dirname, 'src/content.js'),
-        background: resolve(__dirname, 'src/background.js')
+        background: resolve(__dirname, 'src/background.js'),
+        readability: resolve(__dirname, 'src/readability.js')
       },
       output: {
         entryFileNames: '[name].js',
