@@ -95,9 +95,7 @@ useEffect(() => {
         if (message.action !== 'chat') {
           console.log('[Sidebar] Auto-processing text for action:', message.action);
           
-          // Wait for API support check to complete
           const waitForAPI = setInterval(() => {
-            // Check if the relevant API is ready
             const isReady = 
               (message.action === 'summarize' && apiSupport.summarizer) ||
               (message.action === 'translate' && apiSupport.translator) ||
@@ -109,7 +107,6 @@ useEffect(() => {
             }
           }, 100);
           
-          // Timeout after 5 seconds
           setTimeout(() => {
             clearInterval(waitForAPI);
             console.log('[Sidebar] API check timeout - processing anyway');
@@ -1308,7 +1305,7 @@ useEffect(() => {
 
   return (
     <div className="w-full min-h-screen overflow-hidden bg-white dark:bg-gray-900 flex flex-col relative pb-20">
-      {isDragging && (
+      {/* {isDragging && (
         <div className="absolute inset-0 z-50 bg-blue-50 dark:bg-blue-900 bg-opacity-95 flex items-center justify-center animate-in fade-in duration-200">
           <div className="border-4 border-dashed border-blue-400 rounded-2xl p-12 bg-white dark:bg-gray-800 shadow-lg animate-pulse">
             <div className="text-center">
@@ -1325,7 +1322,7 @@ useEffect(() => {
             </div>
           </div>
         </div>
-      )}
+      )} */}
 
       <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 fixed top-0 left-0 right-0 z-50">
         <div className="relative grid grid-cols-4 gap-0.5 bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
@@ -1652,17 +1649,17 @@ useEffect(() => {
           <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
             <div className="flex items-center space-x-1">
               <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                (activeTab === 'explain' && deepExplain) ? 'bg-blue-400' : 
+                (activeTab === 'explain' && deepExplain) || (activeTab == 'chat' && deepThinkEnabled) ? 'bg-blue-400' : 
                 (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) || (activeTab === 'explain' && apiSupport.prompt || (activeTab === 'chat' && apiSupport.chatbot)) ? 'bg-green-400' :
                 'bg-yellow-400'
               }`}></div>
               <span>
-                {(activeTab === 'explain' && deepExplain) ? 'Online Processing' : 
+                {(activeTab === 'explain' && deepExplain) || (activeTab == 'chat' && deepThinkEnabled) ? 'Online Processing' : 
                 (activeTab === 'summarize' && apiSupport.summarizer) || (activeTab === 'translate' && apiSupport.translator) || (activeTab === 'explain' && apiSupport.prompt || (activeTab === 'chat' && apiSupport.chatbot)) ? ' Chrome API' :
                 ' Fallback Mode'}
               </span>
               <span>
-                {(activeTab === 'explain' && deepExplain) ? '• Privacy Concerned' : '• Privacy Protected'}
+                {(activeTab === 'explain' && deepExplain) || (activeTab == 'chat' && deepThinkEnabled) ? '• Privacy Concerned' : '• Privacy Protected'}
               </span>
             </div>
 
