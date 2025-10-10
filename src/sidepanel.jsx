@@ -68,7 +68,7 @@ const SidePanel = () => {
 
   useEffect(() => {
     if (activeTab === 'chat') {
-      setSelectedText('');
+      // setSelectedText('');
       setResult('');
       checkAndLoadPageContext();
     }
@@ -110,68 +110,68 @@ const SidePanel = () => {
     });
   }, []);
 
-useEffect(() => {
-  const handleMessage = (message, sender, sendResponse) => {
-    console.log('[Sidebar] Received message:', message);
-    console.log('[Sidebar] Message type:', message.type);
-    console.log('[Sidebar] Message action:', message.action);
-    console.log('[Sidebar] Message text length:', message.text?.length);
-    
-    if (
-        message.type === 'set-action' || 
-        message.type === 'open-sidepanel' || 
-        message.type === 'open-sidepanel-from-command'
-    ) {
-      console.log(`[Sidebar] Setting active tab to: ${message.action}`);
-      setActiveTab(message.action);
+  useEffect(() => {
+    const handleMessage = (message, sender, sendResponse) => {
+      console.log('[Sidebar] Received message:', message);
+      console.log('[Sidebar] Message type:', message.type);
+      console.log('[Sidebar] Message action:', message.action);
+      console.log('[Sidebar] Message text length:', message.text?.length);
       
-      if (message.type === 'open-sidepanel' && message.text) {
-        const text = message.text;
-        console.log('[Sidebar] Setting selected text:', text.substring(0, 50) + '...');
-        setSelectedText(message.text);
+      if (
+          message.type === 'set-action' || 
+          message.type === 'open-sidepanel' || 
+          message.type === 'open-sidepanel-from-command'
+      ) {
+        console.log(`[Sidebar] Setting active tab to: ${message.action}`);
+        setActiveTab(message.action);
         
-        if (message.action !== 'chat') {
-          console.log('[Sidebar] Auto-processing text for action:', message.action);
+        if (message.type === 'open-sidepanel' && message.text) {
+          const text = message.text;
+          console.log('[Sidebar] Setting selected text:', text.substring(0, 50) + '...');
+          setSelectedText(message.text);
           
-          const waitForAPI = setInterval(() => {
-            const isReady = 
-              (message.action === 'summarize' && apiSupport.summarizer) ||
-              (message.action === 'translate' && apiSupport.translator) ||
-              (message.action === 'explain' && apiSupport.prompt);
+          if (message.action !== 'chat') {
+            console.log('[Sidebar] Auto-processing text for action:', message.action);
             
-            if (isReady) {
+            const waitForAPI = setInterval(() => {
+              const isReady = 
+                (message.action === 'summarize' && apiSupport.summarizer) ||
+                (message.action === 'translate' && apiSupport.translator) ||
+                (message.action === 'explain' && apiSupport.prompt);
+              
+              if (isReady) {
+                clearInterval(waitForAPI);
+                processText(message.action, message.text);
+              }
+            }, 100);
+            
+            setTimeout(() => {
               clearInterval(waitForAPI);
+              console.log('[Sidebar] API check timeout - processing anyway');
               processText(message.action, message.text);
-            }
-          }, 100);
-          
-          setTimeout(() => {
-            clearInterval(waitForAPI);
-            console.log('[Sidebar] API check timeout - processing anyway');
-            processText(message.action, message.text);
-          }, 5000);
+            }, 5000);
+          } else {
+            console.log('[Sidebar] Chat action - setting current message');
+            setCurrentMessage(text);
+          }
         } else {
-          console.log('[Sidebar] Chat action - setting current message');
-          setCurrentMessage(text);
+          console.log('[Sidebar] No text in message or wrong type');
         }
-      } else {
-        console.log('[Sidebar] No text in message or wrong type');
       }
-    }
-    
-    sendResponse({received: true});
-  };
-
-  if (typeof chrome !== 'undefined' && chrome.runtime) {
-    console.log('[Sidebar] Adding message listener');
-    chrome.runtime.onMessage.addListener(handleMessage);
-    
-    return () => {
-      console.log('[Sidebar] Removing message listener');
-      chrome.runtime.onMessage.removeListener(handleMessage);
+      
+      sendResponse({received: true});
     };
-  }
-}, [apiSupport]); 
+
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      console.log('[Sidebar] Adding message listener');
+      chrome.runtime.onMessage.addListener(handleMessage);
+      
+      return () => {
+        console.log('[Sidebar] Removing message listener');
+        chrome.runtime.onMessage.removeListener(handleMessage);
+      };
+    }
+  }, [apiSupport]); 
 
   // const handleSave = () => {
   //   setActivePanel("save");
@@ -381,7 +381,7 @@ useEffect(() => {
             if (!forChatOnly) {
               setSelectedText(content);
               setPageMetadata(metadata);
-              setResult('✅ Page content loaded from cache');
+              // setResult('✅ Page content loaded from cache');
             }
             
             setIsLoading(false);
@@ -1407,7 +1407,7 @@ useEffect(() => {
       
       case 'chat':
         return (
-          <div className="flex flex-col h-[668px] overflow-y-hidden space-y-4">
+          <div className="flex flex-col h-[670px] overflow-y-hidden space-y-4">
             <div className="flex items-center justify-between rounded-lg">
               <h3 className="font-medium text-gray-900 dark:text-white flex items-center space-x-2">
                 <span>Readbuddy AI Assistant</span>
