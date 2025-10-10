@@ -32,6 +32,9 @@ const SidePanel = () => {
   const [showSavedMsg, setShowSavedMsg] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const [pageMetadata, setPageMetadata] = useState([]);
+  const [isPageContextLoaded, setIsPageContextLoaded] = useState(false);
+  const [currentPageUrl, setCurrentPageUrl] = useState('');
+  const [lastReadUrl, setLastReadUrl] = useState('');
 
   const[favorite, setFavorite] = useState(false);
   const [readingLater, setReadingLater] = useState(false);
@@ -51,10 +54,43 @@ const SidePanel = () => {
 
   let noteSpaces = []; 
   let isExtractButtonClicked = false;
+  let pageContext = null;
 
   useEffect(() => {
     checkAPISupport();
   }, []);
+
+  // useEffect(() => {
+  //   if (activeTab === 'chat' && !isPageContextLoaded) {
+  //     readPageForChat();
+  //   }
+  // }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      setSelectedText('');
+      setResult('');
+      checkAndLoadPageContext();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.tabs && activeTab === 'chat') {
+      const handleTabUpdate = (tabId, changeInfo, tab) => {
+        if (changeInfo.status === 'complete' && tab.active && changeInfo.url) {
+          if (changeInfo.url !== lastReadUrl) {
+            checkAndLoadPageContext();
+          }
+        }
+      };
+
+      chrome.tabs.onUpdated.addListener(handleTabUpdate);
+      
+      return () => {
+        chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+      };
+    }
+  }, [activeTab, lastReadUrl]);
 
  useEffect(() => {
     chrome.storage.local.get("activeTab", (data) => {
@@ -140,6 +176,10 @@ useEffect(() => {
   // const handleSave = () => {
   //   setActivePanel("save");
   // };
+
+  const handleExtractPageContent = async () => {
+    await extractPageContent(false);
+  };
 
   const toggleDarkMode = () => {
     const newDarkMode = !isDarkMode;
@@ -321,18 +361,11 @@ useEffect(() => {
     }
   }, []);
 
-  useEffect(() => {
-    if (activeTab === 'summarize' && !selectedText.trim()) {
-      // extractPageContent(); // Get the entire page content
-    }
-  }, [activeTab]);
-
-  const extractPageContent = async () => {
-    isExtractButtonClicked = true;
+  const extractPageContent = async (forChatOnly = false) => {
+    isExtractButtonClicked = !forChatOnly;
 
     try {
       setIsLoading(true);
-      setResult('🔄 Extracting page content...');
 
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -344,9 +377,13 @@ useEffect(() => {
           const { content, metadata, timestamp } = JSON.parse(cached);
           if (Date.now() - timestamp < 5 * 60 * 1000) {
             console.log('✅ Using cached content');
-            setSelectedText(content);
-            setPageMetadata(metadata);
-            setResult('✅ Page content loaded from cache');
+            
+            if (!forChatOnly) {
+              setSelectedText(content);
+              setPageMetadata(metadata);
+              setResult('✅ Page content loaded from cache');
+            }
+            
             setIsLoading(false);
             return { content, metadata };
           }
@@ -366,8 +403,10 @@ useEffect(() => {
             timestamp: Date.now()
           }));
 
-          setSelectedText(content);
-          setPageMetadata(metadata);
+          if (!forChatOnly) {
+            setSelectedText(content);
+            setPageMetadata(metadata);
+          }
           
           console.log('📄 Extracted:', {
             title: metadata.title,
@@ -375,14 +414,15 @@ useEffect(() => {
             words: content.split(/\s+/).length
           });
 
-          // setResult(`✅ Extracted ${content.length.toLocaleString()} characters from page`);
           setIsLoading(false);
           return { content, metadata };
         }
       }
     } catch (error) {
       console.error('❌ Error extracting page content:', error);
-      setResult(`❌ Failed to extract: ${error.message}`);
+      if (!forChatOnly) {
+        setResult(`❌ Failed to extract: ${error.message}`);
+      }
       setIsLoading(false);
       return null;
     }
@@ -475,6 +515,26 @@ useEffect(() => {
     }
     
     return chunks;
+  };
+
+  const checkAndLoadPageContext = async () => {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        
+        if (tab.url !== lastReadUrl) {
+          setCurrentPageUrl(tab.url);
+          setLastReadUrl(tab.url);
+          setIsPageContextLoaded(false);
+          await readPageForChat();
+        } else if (tab.url === lastReadUrl && pageContext) {
+          setIsPageContextLoaded(true);
+          console.log('✅ Page context already loaded for this URL');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check page context:', error);
+    }
   };
 
 
@@ -578,7 +638,7 @@ useEffect(() => {
       const format = formatConfig[summaryMode];
 
       if (isExtractButtonClicked) {
-        setResult('📄 Summarizing full page content...');
+        // setResult('📄 Summarizing full page content...');
 
         const chunks = chunkText(text, 4000);
         console.log(`📊 Split into ${chunks.length} chunks`);
@@ -586,7 +646,7 @@ useEffect(() => {
         const chunkSummaries = [];
 
         for (let i = 0; i < chunks.length; i++) {
-          setResult(`🔄 Processing section ${i + 1}/${chunks.length}...`);
+          // setResult(`🔄 Processing section ${i + 1}/${chunks.length}...`);
 
           isExtractButtonClicked = false;
           const chunkSummary = await summarizeText(chunks[i]);
@@ -815,6 +875,20 @@ useEffect(() => {
     setIsStreaming(true);
     
     try {
+      let prompt = text;
+      if (pageContext && pageContext.summary) {
+        prompt = `
+          Context: I'm reading a webpage titled "${pageContext.metadata?.title || 'Unknown'}".
+
+          Page Summary:
+          ${pageContext.summary.substring(0, 3000)}
+
+          User Question: ${text}
+
+          Please answer based on the page context above. If the question is not related to the page, answer normally.
+        `.trim();
+      }
+
       const needCloudMixing = (
         text.toLowerCase().includes('latest') ||
         text.includes('2024') ||
@@ -869,6 +943,9 @@ useEffect(() => {
       setChatHistory(prev => [...prev, botMessage]);
 
       return response;
+    } catch (error) {
+      console.error('Chat error:', error);
+      throw error;
     } finally {
       setIsStreaming(false);
     }
@@ -896,6 +973,61 @@ useEffect(() => {
   const clearChatHistory = () => {
     setChatHistory([]);
     setCurrentMessage('');
+  };
+
+  const readPageForChat = async () => {
+    try {
+      setIsLoading(true);
+
+      const extractedData = await extractPageContent(true);
+      if (!extractedData) {
+        throw new Error('Failed to extract page content');
+      }
+
+      const { content, metadata } = extractedData;
+      
+      pageContext = {
+        fullContent: content,
+        metadata: metadata,
+        summary: null,
+        url: currentPageUrl
+      };
+      
+      const wordCount = content.split(/\s+/).length;
+      
+      if (wordCount > 2000) {
+        const chunks = chunkText(content, 4000);
+        const summaries = [];
+        
+        for (let i = 0; i < Math.min(chunks.length, 3); i++) {
+          isExtractButtonClicked = false;
+          const summary = await summarizeText(chunks[i]);
+          summaries.push(summary.replace(/\*\*Summary.*?\*\*\n\n/g, '').trim());
+        }
+        
+        pageContext.summary = summaries.join('\n\n');
+      } else {
+        pageContext.summary = content;
+      }
+
+      console.log('✅ Page context loaded for chat:', {
+        title: metadata.title,
+        contentLength: content.length,
+        summaryLength: pageContext.summary.length,
+        url: currentPageUrl
+      });
+
+      setIsPageContextLoaded(true);
+      setIsLoading(false);
+      
+      return pageContext;
+
+    } catch (error) {
+      console.error('❌ Failed to read page for chat:', error);
+      setIsPageContextLoaded(false);
+      setIsLoading(false);
+      return null;
+    }
   };
 
   const generateRelatedConcepts = async (text) => {
@@ -1083,8 +1215,10 @@ useEffect(() => {
           break;
         case 'chat':
           if (chatHistory.length === 0 && text.trim()) {
-            processedResult =await chatbotText(text);
+            processedResult = await chatbotWithPageContext(text);
             setSelectedText('');
+          } else if (chatHistory.length > 0) {
+            processedResult = await chatbotWithPageContext(text);
           }
           break;
         default:
@@ -1299,6 +1433,11 @@ useEffect(() => {
                   <p className="text-xs mt-1 text-gray-400 dark:text-gray-500">
                     Ask questions, request explanations, or just chat!
                   </p>
+                  {isPageContextLoaded && (
+                    <p className="text-xs mt-2 text-green-600 dark:text-green-400">
+                      ✅ Page context loaded - Ask questions about the current page!
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1383,13 +1522,18 @@ useEffect(() => {
                   </button>
                 )}
 
-                <button
-                  onClick={extractPageContent}
-                  className="px-3 py-2 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-xs rounded-md hover:bg-green-200 dark:hover:bg-green-800 transition-colors flex items-center space-x-1"
+                {/* <button
+                  onClick={togglePageContext}
+                  className={`px-3 py-2 text-xs rounded-md transition-colors flex items-center space-x-1 ${
+                    isPageContextLoaded
+                      ? 'bg-green-500 text-white hover:bg-green-600'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  }`}
+                  disabled={isLoading}
                 >
                   <span>📖</span>
-                  <span>Read Page</span>
-                </button>
+                  <span>{isPageContextLoaded ? 'Page Loaded' : 'Read Page'}</span>
+                </button> */}
 
                 <button
                   onClick={() => setDeepThinkEnabled(!deepThinkEnabled)}
@@ -1519,7 +1663,7 @@ useEffect(() => {
 
               {['summarize', 'translate', 'explain'].includes(activeTab) && !selectedText.trim() && (
                 <button
-                  onClick={extractPageContent}
+                  onClick={handleExtractPageContent}
                   className="absolute top-[-3.5] right-2 px-3 py-1 bg-blue-500 text-white text-xs rounded-md hover:bg-blue-600 transition-colors"
                 >
                   Extract Page Content
