@@ -35,6 +35,7 @@ const SidePanel = () => {
   const [isPageContextLoaded, setIsPageContextLoaded] = useState(false);
   const [currentPageUrl, setCurrentPageUrl] = useState('');
   const [lastReadUrl, setLastReadUrl] = useState('');
+  const [pageContext, setPageContext] = useState(null);
 
   const[favorite, setFavorite] = useState(false);
   const [readingLater, setReadingLater] = useState(false);
@@ -54,7 +55,6 @@ const SidePanel = () => {
 
   let noteSpaces = []; 
   let isExtractButtonClicked = false;
-  let pageContext = null;
 
   useEffect(() => {
     checkAPISupport();
@@ -75,19 +75,27 @@ const SidePanel = () => {
   }, [activeTab]);
 
   useEffect(() => {
-    if (typeof chrome !== 'undefined' && chrome.tabs && activeTab === 'chat') {
-      const handleTabUpdate = (tabId, changeInfo, tab) => {
-        if (changeInfo.status === 'complete' && tab.active && changeInfo.url) {
-          if (changeInfo.url !== lastReadUrl) {
-            checkAndLoadPageContext();
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      const handleActivated = async (activeInfo) => {
+        if (activeTab === 'chat') {
+          console.log('Tab switched, checking if need to read new page...');
+          
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          
+          if (tab.url !== lastReadUrl) {
+            console.log('New page detected, reading content...');
+            setCurrentPageUrl(tab.url);
+            setLastReadUrl(tab.url);
+            setIsPageContextLoaded(false);
+            await readPageForChat();
           }
         }
       };
 
-      chrome.tabs.onUpdated.addListener(handleTabUpdate);
+      chrome.tabs.onActivated.addListener(handleActivated);
       
       return () => {
-        chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+        chrome.tabs.onActivated.removeListener(handleActivated);
       };
     }
   }, [activeTab, lastReadUrl]);
@@ -522,11 +530,10 @@ const SidePanel = () => {
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         
+        console.log('Checking page context for:', tab.url);
+        
         if (tab.url !== lastReadUrl) {
-          setCurrentPageUrl(tab.url);
-          setLastReadUrl(tab.url);
-          setIsPageContextLoaded(false);
-          await readPageForChat();
+          await readPageForChat(); 
         } else if (tab.url === lastReadUrl && pageContext) {
           setIsPageContextLoaded(true);
           console.log('✅ Page context already loaded for this URL');
@@ -682,12 +689,12 @@ const SidePanel = () => {
         format: format,
         length: config.length,
         outputLanguage: 'en',
-        monitor(m) {
-          m.addEventListener('downloadprogress', (e) => {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            console.log(`Downloading summarizer model: ${percent}% (${e.loaded}/${e.total})`);
-          });
-        }
+        // monitor(m) {
+        //   m.addEventListener('downloadprogress', (e) => {
+        //     const percent = Math.round((e.loaded / e.total) * 100);
+        //     console.log(`Downloading summarizer model: ${percent}% (${e.loaded}/${e.total})`);
+        //   });
+        // }
       });
 
       let summary = await summarizer.summarize(text, { outputLanguage: "en" });
@@ -718,11 +725,11 @@ const SidePanel = () => {
         `;
 
         const session = await LanguageModel.create({
-          monitor(m) {
-            m.addEventListener("downloadprogress", (e) => {
-              console.log(`Downloaded prompt language model: ${e.loaded * 100}%`);
-            });
-          },
+          // monitor(m) {
+          //   m.addEventListener("downloadprogress", (e) => {
+          //     console.log(`Downloaded prompt language model: ${e.loaded * 100}%`);
+          //   });
+          // },
         });
 
         const extraQA = await session.prompt(prompt);
@@ -765,12 +772,12 @@ const SidePanel = () => {
       if (sourceLang === 'auto') {
         console.log('🔍 Detecting language...');
         const detector = await LanguageDetector.create({
-          monitor(m) {
-            m.addEventListener('downloadprogress', (e) => {
-              const percent = Math.round((e.loaded / e.total) * 100);
-              console.log(`Downloading language detector: ${percent}%`);
-            });
-          }
+          // monitor(m) {
+          //   m.addEventListener('downloadprogress', (e) => {
+          //     const percent = Math.round((e.loaded / e.total) * 100);
+          //     console.log(`Downloading language detector: ${percent}%`);
+          //   });
+          // }
         });
         const result = await detector.detect(text);
         fromLang = result[0]?.detectedLanguage || 'en';
@@ -785,12 +792,12 @@ const SidePanel = () => {
       const translator = await Translator.create({
         sourceLanguage: fromLang,
         targetLanguage: targetLang,
-        monitor(m) {
-          m.addEventListener('downloadprogress', (e) => {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            console.log(`Downloading model: ${percent}% (${e.loaded}/${e.total})`);
-          });
-        }
+        // monitor(m) {
+        //   m.addEventListener('downloadprogress', (e) => {
+        //     const percent = Math.round((e.loaded / e.total) * 100);
+        //     console.log(`Downloading model: ${percent}% (${e.loaded}/${e.total})`);
+        //   });
+        // }
       });
 
       const translation = await translator.translate(text);
@@ -850,11 +857,11 @@ const SidePanel = () => {
       `;
 
       const session = await LanguageModel.create({
-        monitor(m) {
-          m.addEventListener("downloadprogress", (e) => {
-            console.log(`Downloaded explanation language model: ${e.loaded * 100}%`);
-          });
-        },
+        // monitor(m) {
+        //   m.addEventListener("downloadprogress", (e) => {
+        //     console.log(`Downloaded explanation language model: ${e.loaded * 100}%`);
+        //   });
+        // },
       });
 
       const explanation = await session.prompt(prompt);
@@ -876,17 +883,25 @@ const SidePanel = () => {
     
     try {
       let prompt = text;
-      if (pageContext && pageContext.summary) {
-        prompt = `
-          Context: I'm reading a webpage titled "${pageContext.metadata?.title || 'Unknown'}".
+
+      if (pageContext && (pageContext.summary || pageContext.fullContent)) {
+        const contextToUse = pageContext.summary || pageContext.fullContent.substring(0, 3000);
+        prompt = `Context: I'm reading a webpage titled "${pageContext.metadata?.title || 'Unknown'}".
 
           Page Summary:
-          ${pageContext.summary.substring(0, 3000)}
+          ${contextToUse}
 
           User Question: ${text}
 
-          Please answer based on the page context above. If the question is not related to the page, answer normally.
-        `.trim();
+          Please answer based on the page context above. If the question is not related to the page, answer normally.`;
+        
+        console.log('Using page context for chat:', {
+          hasContext: true,
+          contextLength: contextToUse.length,
+          title: pageContext.metadata?.title
+        });
+      } else {
+        console.log('No page context available');
       }
 
       const needCloudMixing = (
@@ -924,12 +939,12 @@ const SidePanel = () => {
         sourceTag = "online";
       } else {
         chatbot = await LanguageModel.create({
-          monitor(m) {
-            m.addEventListener('downloadprogress', (e) => {
-              const percent = Math.round((e.loaded / e.total) * 100);
-              console.log(`Downloading local chatbot model: ${percent}%`);
-            });
-          }
+          // monitor(m) {
+          //   m.addEventListener('downloadprogress', (e) => {
+          //     const percent = Math.round((e.loaded / e.total) * 100);
+          //     console.log(`Downloading local chatbot model: ${percent}%`);
+          //   });
+          // }
         });
         sourceTag = "local";
       }
@@ -978,54 +993,85 @@ const SidePanel = () => {
   const readPageForChat = async () => {
     try {
       setIsLoading(true);
+      setIsPageContextLoaded(false);
 
-      const extractedData = await extractPageContent(true);
-      if (!extractedData) {
-        throw new Error('Failed to extract page content');
-      }
-
-      const { content, metadata } = extractedData;
-      
-      pageContext = {
-        fullContent: content,
-        metadata: metadata,
-        summary: null,
-        url: currentPageUrl
-      };
-      
-      const wordCount = content.split(/\s+/).length;
-      
-      if (wordCount > 2000) {
-        const chunks = chunkText(content, 4000);
-        const summaries = [];
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const pageUrl = tab.url;
         
-        for (let i = 0; i < Math.min(chunks.length, 3); i++) {
-          isExtractButtonClicked = false;
-          const summary = await summarizeText(chunks[i]);
-          summaries.push(summary.replace(/\*\*Summary.*?\*\*\n\n/g, '').trim());
+        console.log('Reading page:', pageUrl);
+        
+        setCurrentPageUrl(pageUrl);
+        setLastReadUrl(pageUrl);
+
+        const extractedData = await extractPageContent(true);
+        if (!extractedData) {
+          console.log('❌ Cannot read this page - extraction failed');
+          setIsLoading(false);
+          setIsPageContextLoaded(false);
+          setPageContext(null);
+          return null;
+        }
+
+        const { content, metadata } = extractedData;
+        
+        if (!content || content.trim().length < 100) {
+          console.log('❌ Cannot read this page - insufficient content');
+          setIsLoading(false);
+          setIsPageContextLoaded(false);
+          setPageContext(null);
+          return null;
         }
         
-        pageContext.summary = summaries.join('\n\n');
-      } else {
-        pageContext.summary = content;
+        const newPageContext = {
+          fullContent: content,
+          metadata: metadata,
+          summary: null,
+          url: pageUrl 
+        };
+        
+        const wordCount = content.split(/\s+/).length;
+        
+        try {
+          if (wordCount > 2000) {
+            const chunks = chunkText(content, 4000);
+            const summaries = [];
+            
+            for (let i = 0; i < Math.min(chunks.length, 3); i++) {
+              isExtractButtonClicked = false;
+              const summary = await summarizeText(chunks[i]);
+              summaries.push(summary.replace(/\*\*Summary.*?\*\*\n\n/g, '').trim());
+            }
+            
+            newPageContext.summary = summaries.join('\n\n');
+          } else {
+            newPageContext.summary = content;
+          }
+        } catch (summaryError) {
+          console.log('⚠️ Could not summarize, using raw content');
+          newPageContext.summary = content.substring(0, 3000);
+        }
+
+        setPageContext(newPageContext);
+
+        console.log('✅ Page context loaded for chat:', {
+          title: metadata.title,
+          contentLength: content.length,
+          summaryLength: newPageContext.summary.length,
+          url: pageUrl
+        });
+
+        setIsPageContextLoaded(true);
+        setIsLoading(false);
+        
+        return newPageContext;
       }
-
-      console.log('✅ Page context loaded for chat:', {
-        title: metadata.title,
-        contentLength: content.length,
-        summaryLength: pageContext.summary.length,
-        url: currentPageUrl
-      });
-
-      setIsPageContextLoaded(true);
-      setIsLoading(false);
-      
-      return pageContext;
 
     } catch (error) {
       console.error('❌ Failed to read page for chat:', error);
       setIsPageContextLoaded(false);
       setIsLoading(false);
+      setPageContext(null);
       return null;
     }
   };
@@ -1053,11 +1099,11 @@ const SidePanel = () => {
     `;
 
     const session = await LanguageModel.create({
-      monitor(m) {
-        m.addEventListener("downloadprogress", (e) => {
-          console.log(`Downloaded Prompts language model: ${e.loaded * 100}%`);
-        });
-      },
+      // monitor(m) {
+      //   m.addEventListener("downloadprogress", (e) => {
+      //     console.log(`Downloaded Prompts language model: ${e.loaded * 100}%`);
+      //   });
+      // },
     });
 
     const response = await session.prompt(prompt);
@@ -1425,8 +1471,18 @@ const SidePanel = () => {
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-              {chatHistory.length === 0 ? (
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 min-h-0">
+              {isLoading && !chatHistory.length ? (
+                <div className="h-full flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
+                  <div className="text-4xl mb-2">📖</div>
+                  <p className="text-sm">Reading page content...</p>
+                  <div className="flex space-x-1 mt-2">
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                  </div>
+                </div>
+              ) : chatHistory.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
                   <div className="text-4xl mb-2">💬</div>
                   <p className="text-sm">Start a conversation with the AI assistant</p>
@@ -1436,6 +1492,11 @@ const SidePanel = () => {
                   {isPageContextLoaded && (
                     <p className="text-xs mt-2 text-green-600 dark:text-green-400">
                       ✅ Page context loaded - Ask questions about the current page!
+                    </p>
+                  )}
+                  {!isPageContextLoaded && !isLoading && (
+                    <p className="text-xs mt-2 text-yellow-600 dark:text-yellow-400">
+                      ⚠️ Could not read this page - but you can still chat normally!
                     </p>
                   )}
                 </div>
