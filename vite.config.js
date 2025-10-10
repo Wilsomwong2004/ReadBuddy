@@ -6,6 +6,7 @@ import { resolve } from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   build: {
+    chunkSizeWarningLimit: 1500,
     rollupOptions: {
       input: {
         popup: resolve(__dirname, 'popup.html'),

@@ -5,6 +5,8 @@ import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
 import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import './index.css';
 
 const SidePanel = () => {
@@ -828,7 +830,6 @@ const SidePanel = () => {
         5. Resource Guide - Recommendations to authoritative learning resources (please provide authentic references and URL links)
 
         Emphasis on accuracy and depth, suitable for professional readers.
-        not need to add the ** ** or * * text.
     `;
 
       const result = await gemini_model.generateContent(prompt);
@@ -853,7 +854,6 @@ const SidePanel = () => {
         5. Suggested directions for further study
 
         Use a friendly, understandable tone, as if you were explaining something to a friend.
-        not need to add the ** ** or * * text.
       `;
 
       const session = await LanguageModel.create({
@@ -880,8 +880,14 @@ const SidePanel = () => {
     }
 
     setIsStreaming(true);
+    console.log('🔍 Current pageContext:', pageContext);
     
     try {
+      if (!pageContext || !pageContext.summary) {
+        console.log("⚠️ No page context yet, waiting to load...");
+        await checkAndLoadPageContext();
+      }
+
       let prompt = text;
 
       if (pageContext && (pageContext.summary || pageContext.fullContent)) {
@@ -952,7 +958,7 @@ const SidePanel = () => {
       const userMessage = { type: 'user', content: text, timestamp: Date.now() };
       setChatHistory(prev => [...prev, userMessage]);
 
-      const response = await chatbot.prompt(text);
+      const response = await chatbot.prompt(prompt);
 
       const botMessage = { type: 'bot', content: response, source: sourceTag, timestamp: Date.now() };
       setChatHistory(prev => [...prev, botMessage]);
@@ -1095,7 +1101,6 @@ const SidePanel = () => {
       Keep it concise; each concept should have no more than three related aspects.
       no need add **bold** or *italic* text. also no need say here are 5 core concepts.
       directly start from concept 1 to concept 5 and each conecpt have gap space.
-      not need to add the ** ** or * * text.
     `;
 
     const session = await LanguageModel.create({
@@ -1514,7 +1519,17 @@ const SidePanel = () => {
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-none'
                         }`}
                       >
-                        <p className="text-sm whitespace-pre-line">{message.content}</p>
+                        
+                        {message.type !== "user" ? (
+                          <div
+                            className="text-sm whitespace-pre-line leading-relaxed"
+                            dangerouslySetInnerHTML={{
+                              __html: DOMPurify.sanitize(marked(message.content || "")),
+                            }}
+                          />
+                        ) : (
+                          <p className="text-sm whitespace-pre-line">{message.content}</p>
+                        )}
 
                         {message.type === 'user' && ( 
                           <p
@@ -1776,9 +1791,12 @@ const SidePanel = () => {
           <div className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h3 className="font-medium text-gray-900 dark:text-white mb-3">Result</h3>
             <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm">
-              <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed">
-                {result}
-              </div>
+            <div
+              className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(marked(result)),
+              }}
+            />
             </div>
               <div className="flex items-center gap-2 mt-3">
                 {(activeTab === 'summarize' || activeTab === 'explain') && (
