@@ -45,6 +45,12 @@ const SidePanel = () => {
   const lastReadUrlRef = useRef('');
   const currentLoadIdRef = useRef(0);
 
+  const [processingQueue, setProcessingQueue] = useState([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+  const processingQueueRef = useRef([]);
+  const isProcessingQueueRef = useRef(false);
+  const MAX_PAGE_HISTORY = 20;
+
   const[favorite, setFavorite] = useState(false);
   const [readingLater, setReadingLater] = useState(false);
   const [categories, setCategories] = useState([]);
@@ -66,6 +72,34 @@ const SidePanel = () => {
 
   useEffect(() => {
     checkAPISupport();
+
+    const initializePageRead = async () => {
+      try {
+        console.log('🚀 Auto-reading page on app open');
+        await checkAndLoadPageContext(false);
+      } catch (error) {
+        console.log('⚠️ Cannot read this page, ignoring:', error.message);
+      }
+    };
+    
+    initializePageRead();
+  }, []);
+
+  useEffect(() => { 
+    processingQueueRef.current = processingQueue; 
+    console.log('📊 Queue ref updated, length:', processingQueue.length);
+  }, [processingQueue]);
+
+  useEffect(() => {
+    window.checkQueue = () => {
+      console.log('========== QUEUE STATUS ==========');
+      console.log('Queue length:', processingQueueRef.current.length);
+      console.log('Is processing:', isProcessingQueueRef.current);
+      console.log('Queue items:', processingQueueRef.current);
+      console.log('Page history size:', pageHistoryRef.current.length);
+      console.log('Current page context loaded:', !!pageContextRef.current);
+      console.log('==================================');
+    };
   }, []);
 
   // useEffect(() => {
@@ -77,6 +111,9 @@ const SidePanel = () => {
   useEffect(() => { pageContextRef.current = pageContext; }, [pageContext]);
   useEffect(() => { pageHistoryRef.current = pageHistory; }, [pageHistory]);
   useEffect(() => { lastReadUrlRef.current = lastReadUrl; }, [lastReadUrl]);
+  useEffect(() => { processingQueueRef.current = processingQueue; }, [processingQueue]);
+  useEffect(() => { isProcessingQueueRef.current = isProcessingQueue; }, [isProcessingQueue]);
+
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -90,17 +127,18 @@ const SidePanel = () => {
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.tabs) {
       const handleActivated = async (activeInfo) => {
-        console.log('📂 Tab switched, checking if need to read new page...');
-        await checkAndLoadPageContext();
-        // if (activeTab === 'chat') {
-        //   await checkAndLoadPageContext();
-        // }
+        console.log('🔄 Tab switched, checking if need to read new page...');
+        try {
+          await checkAndLoadPageContext(false);
+        } catch (error) {
+          console.log('⚠️ Cannot read this page, ignoring:', error.message);
+        }
       };
 
       chrome.tabs.onActivated.addListener(handleActivated);
       return () => chrome.tabs.onActivated.removeListener(handleActivated);
     }
-  }, [activeTab, pageHistory, lastReadUrl]);
+  }, [activeTab]);
 
  useEffect(() => {
     chrome.storage.local.get("activeTab", (data) => {
@@ -536,36 +574,91 @@ const SidePanel = () => {
     return chunks;
   };
 
- const checkAndLoadPageContext = async () => {
-  try {
-    if (typeof chrome === 'undefined' || !chrome.tabs) return;
+  const checkAndLoadPageContext = async (prioritize = false) => {
+    try {
+      if (typeof chrome === 'undefined' || !chrome.tabs) return;
 
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !tab.url) return;
-    const url = tab.url;
-    console.log('🔍 Checking page context for:', url);
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab || !tab.url) return;
+      const url = tab.url;
+      
+      console.log('🔍 Checking page context for:', url, 'Prioritize:', prioritize);
 
-    const cachedPage = findCachedPage(url);
-    if (cachedPage) {
-      setPageContext(cachedPage);
-      pageContextRef.current = cachedPage;
-      setIsPageContextLoaded(true);
-      setIsLoading(false);
-      console.log('✅ Using cached content for', url);
-      return;
+      const cachedPage = findCachedPage(url);
+      if (cachedPage) {
+        setPageContext(cachedPage);
+        pageContextRef.current = cachedPage;
+        setIsPageContextLoaded(true);
+        setIsLoading(false);
+        console.log('✅ Using cached content for', url);
+        return;
+      }
+
+      const inQueue = processingQueueRef.current.some(item => item.url === url);
+      
+      if (prioritize) {
+        console.log('⚡ Prioritizing current page read:', url);
+        
+        setProcessingQueue(prev => prev.filter(item => item.url !== url));
+        
+        await readPageForChat(url);
+      } else if (!inQueue && url !== lastReadUrlRef.current) {
+        console.log('📋 Adding to queue:', url);
+        setProcessingQueue(prev => [...prev, { url, timestamp: Date.now() }]);
+        
+        if (!isProcessingQueueRef.current) {
+          processQueue();
+        }
+      } else if (url === lastReadUrlRef.current && pageContextRef.current) {
+        setIsPageContextLoaded(true);
+        setIsLoading(false);
+        console.log('✅ Page context already loaded for this URL');
+      }
+    } catch (err) {
+      console.log('⚠️ Cannot read this page, ignoring:', err.message);
     }
+  };
 
-    if (url !== lastReadUrlRef.current) {
-      console.log('🆕 No cache found, will read page content:', url);
-      await readPageForChat(url);
-    } else if (url === lastReadUrlRef.current && pageContextRef.current) {
-      setIsPageContextLoaded(true);
-      setIsLoading(false);
-      console.log('✅ Page context already loaded for this URL');
-    }
-  } catch (err) {
-    console.error('Failed to check page context:', err);
+  const processQueue = async () => {
+  if (isProcessingQueueRef.current) {
+    console.log('⏳ Queue processor already running');
+    return;
   }
+
+  console.log('🚀 Starting queue processor');
+  setIsProcessingQueue(true);
+  isProcessingQueueRef.current = true;
+  
+  while (processingQueueRef.current.length > 0) {
+    const nextItem = processingQueueRef.current[0];
+    console.log('🔄 Processing queue item:', nextItem.url);
+    console.log('📊 Remaining in queue:', processingQueueRef.current.length);
+    
+    const cached = findCachedPage(nextItem.url);
+    if (cached) {
+      console.log('✅ Already cached, skipping:', nextItem.url);
+      setProcessingQueue(prev => prev.slice(1));
+      await new Promise(resolve => setTimeout(resolve, 50));
+      continue;
+    }
+    
+    try {
+      console.log('⏳ Starting to read:', nextItem.url);
+      await readPageForChat(nextItem.url);
+      console.log('✅ Successfully read:', nextItem.url);
+    } catch (error) {
+      console.log('⚠️ Cannot read page, skipping:', nextItem.url, error.message);
+    }
+    
+    setProcessingQueue(prev => prev.slice(1));
+    console.log('✅ Removed from queue:', nextItem.url);
+    
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  
+  isProcessingQueueRef.current = false;
+  setIsProcessingQueue(false);
+  console.log('✅ Queue processing complete - all items processed');
 };
 
   // Drag and Drop handlers
@@ -900,14 +993,44 @@ const SidePanel = () => {
       setChatHistory([]);
     }
 
-    setIsStreaming(true);
+    const askingAboutCurrentPage = /\b(this|current|the)\s+(page|article|webpage|site|content|document)\b/i.test(text);
+    
     console.log('🔍 Current pageContext:', pageContext);
+    console.log('📝 User asking about current page:', askingAboutCurrentPage);
     
     try {
-      if (!pageContext || !pageContext.summary) {
-        console.log("⚠️ No page context yet, waiting to load...");
-        await checkAndLoadPageContext();
+      if (askingAboutCurrentPage && (!pageContext || !pageContext.summary)) {
+        console.log("⚡ User asking about current page - prioritizing load!");
+        
+        // Add user message first
+        const userMessage = { type: 'user', content: text, timestamp: Date.now() };
+        setChatHistory(prev => [...prev, userMessage]);
+        
+        // Add bot "reading" message
+        const readingMessage = { 
+          type: 'bot', 
+          content: '📖 Hardworking on reading the page... please wait', 
+          source: 'system',
+          timestamp: Date.now() 
+        };
+        setChatHistory(prev => [...prev, readingMessage]);
+        
+        // Prioritize reading the page
+        await checkAndLoadPageContext(true);
+        
+        // Remove the reading message
+        setChatHistory(prev => prev.filter(msg => msg.content !== '📖 Hardworking on reading the page... please wait'));
+        
+      } else if (!pageContext || !pageContext.summary) {
+        console.log("⚠️ No page context yet, checking normally...");
+        await checkAndLoadPageContext(false);
+      } else {
+        // Add user message for normal flow
+        const userMessage = { type: 'user', content: text, timestamp: Date.now() };
+        setChatHistory(prev => [...prev, userMessage]);
       }
+
+      setIsStreaming(true);
 
       let prompt = text;
 
@@ -965,19 +1088,15 @@ const SidePanel = () => {
         };
         sourceTag = "online";
       } else {
-        chatbot = await LanguageModel.create({
-          // monitor(m) {
-          //   m.addEventListener('downloadprogress', (e) => {
-          //     const percent = Math.round((e.loaded / e.total) * 100);
-          //     console.log(`Downloading local chatbot model: ${percent}%`);
-          //   });
-          // }
-        });
+        chatbot = await LanguageModel.create();
         sourceTag = "local";
       }
 
-      const userMessage = { type: 'user', content: text, timestamp: Date.now() };
-      setChatHistory(prev => [...prev, userMessage]);
+      // Only add user message if not already added (for prioritize case)
+      if (!askingAboutCurrentPage || (pageContext && pageContext.summary)) {
+        const userMessage = { type: 'user', content: text, timestamp: Date.now() };
+        setChatHistory(prev => [...prev, userMessage]);
+      }
 
       const response = await chatbot.prompt(prompt);
 
@@ -1067,10 +1186,10 @@ const SidePanel = () => {
       }
 
       if (!extractedData || !extractedData.content || extractedData.content.trim().length < 100) {
-        console.log('❌ Cannot read this page - extraction failed or insufficient for', pageUrl);
+        console.log('⚠️ Cannot read this page - extraction failed or insufficient for', pageUrl);
         setIsLoading(false);
         setIsPageContextLoaded(false);
-        return null;
+        throw new Error('Page content extraction failed');
       }
 
       const { content, metadata } = extractedData;
@@ -1108,12 +1227,22 @@ const SidePanel = () => {
         setPageHistory(prev => {
           const filtered = (prev || []).filter(p => p.url !== pageUrl);
           const updated = [newPageContext, ...filtered];
-          if (updated.length > 3) updated.pop();
+          
+          if (updated.length > MAX_PAGE_HISTORY) {
+            console.log(`🗑️ Removing oldest page from history (limit: ${MAX_PAGE_HISTORY})`);
+            updated.splice(MAX_PAGE_HISTORY);
+          }
+          
           pageHistoryRef.current = updated;
           return updated;
         });
 
-        console.log('✅ Page context loaded for chat:', { title: metadata?.title, url: pageUrl, loadId: myLoadId });
+        console.log('✅ Page context loaded for chat:', { 
+          title: metadata?.title, 
+          url: pageUrl, 
+          loadId: myLoadId,
+          historySize: pageHistoryRef.current.length 
+        });
         setIsLoading(false);
         return newPageContext;
       } else {
@@ -1121,12 +1250,12 @@ const SidePanel = () => {
         return null;
       }
     } catch (error) {
-      console.error('❌ Failed to read page for chat:', error);
+      console.log('⚠️ Failed to read page, ignoring:', error.message);
       if (currentLoadIdRef.current === myLoadId) {
         setIsLoading(false);
         setIsPageContextLoaded(false);
       }
-      return null;
+      throw error;
     }
   };
 
