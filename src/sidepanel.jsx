@@ -34,10 +34,16 @@ const SidePanel = () => {
   const [showSavedMsg, setShowSavedMsg] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const [pageMetadata, setPageMetadata] = useState([]);
+
   const [isPageContextLoaded, setIsPageContextLoaded] = useState(false);
   const [currentPageUrl, setCurrentPageUrl] = useState('');
   const [lastReadUrl, setLastReadUrl] = useState('');
   const [pageContext, setPageContext] = useState(null);
+  const [pageHistory, setPageHistory] = useState([]); 
+  const pageContextRef = useRef(null);
+  const pageHistoryRef = useRef([]);
+  const lastReadUrlRef = useRef('');
+  const currentLoadIdRef = useRef(0);
 
   const[favorite, setFavorite] = useState(false);
   const [readingLater, setReadingLater] = useState(false);
@@ -68,39 +74,33 @@ const SidePanel = () => {
   //   }
   // }, [activeTab]);
 
+  useEffect(() => { pageContextRef.current = pageContext; }, [pageContext]);
+  useEffect(() => { pageHistoryRef.current = pageHistory; }, [pageHistory]);
+  useEffect(() => { lastReadUrlRef.current = lastReadUrl; }, [lastReadUrl]);
+
   useEffect(() => {
     if (activeTab === 'chat') {
       // setSelectedText('');
       setResult('');
-      checkAndLoadPageContext();
     }
+
+    checkAndLoadPageContext();
   }, [activeTab]);
 
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.tabs) {
       const handleActivated = async (activeInfo) => {
-        if (activeTab === 'chat') {
-          console.log('Tab switched, checking if need to read new page...');
-          
-          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-          
-          if (tab.url !== lastReadUrl) {
-            console.log('New page detected, reading content...');
-            setCurrentPageUrl(tab.url);
-            setLastReadUrl(tab.url);
-            setIsPageContextLoaded(false);
-            await readPageForChat();
-          }
-        }
+        console.log('📂 Tab switched, checking if need to read new page...');
+        await checkAndLoadPageContext();
+        // if (activeTab === 'chat') {
+        //   await checkAndLoadPageContext();
+        // }
       };
 
       chrome.tabs.onActivated.addListener(handleActivated);
-      
-      return () => {
-        chrome.tabs.onActivated.removeListener(handleActivated);
-      };
+      return () => chrome.tabs.onActivated.removeListener(handleActivated);
     }
-  }, [activeTab, lastReadUrl]);
+  }, [activeTab, pageHistory, lastReadUrl]);
 
  useEffect(() => {
     chrome.storage.local.get("activeTab", (data) => {
@@ -189,6 +189,11 @@ const SidePanel = () => {
 
   const handleExtractPageContent = async () => {
     await extractPageContent(false);
+  };
+
+  const findCachedPage = (url) => {
+    const hist = pageHistoryRef.current || [];
+    return hist.find(p => p.url === url) || null;
   };
 
   const toggleDarkMode = () => {
@@ -377,6 +382,10 @@ const SidePanel = () => {
     try {
       setIsLoading(true);
 
+      // if (!forChatOnly) {
+      //   setResult('');
+      // }
+
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         
@@ -527,25 +536,37 @@ const SidePanel = () => {
     return chunks;
   };
 
-  const checkAndLoadPageContext = async () => {
-    try {
-      if (typeof chrome !== 'undefined' && chrome.tabs) {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        
-        console.log('Checking page context for:', tab.url);
-        
-        if (tab.url !== lastReadUrl) {
-          await readPageForChat(); 
-        } else if (tab.url === lastReadUrl && pageContext) {
-          setIsPageContextLoaded(true);
-          console.log('✅ Page context already loaded for this URL');
-        }
-      }
-    } catch (error) {
-      console.error('Failed to check page context:', error);
-    }
-  };
+ const checkAndLoadPageContext = async () => {
+  try {
+    if (typeof chrome === 'undefined' || !chrome.tabs) return;
 
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.url) return;
+    const url = tab.url;
+    console.log('🔍 Checking page context for:', url);
+
+    const cachedPage = findCachedPage(url);
+    if (cachedPage) {
+      setPageContext(cachedPage);
+      pageContextRef.current = cachedPage;
+      setIsPageContextLoaded(true);
+      setIsLoading(false);
+      console.log('✅ Using cached content for', url);
+      return;
+    }
+
+    if (url !== lastReadUrlRef.current) {
+      console.log('🆕 No cache found, will read page content:', url);
+      await readPageForChat(url);
+    } else if (url === lastReadUrlRef.current && pageContextRef.current) {
+      setIsPageContextLoaded(true);
+      setIsLoading(false);
+      console.log('✅ Page context already loaded for this URL');
+    }
+  } catch (err) {
+    console.error('Failed to check page context:', err);
+  }
+};
 
   // Drag and Drop handlers
   // const handleDragEnter = (e) => {
@@ -979,7 +1000,11 @@ const SidePanel = () => {
     setCurrentMessage('');
     
     try {
-      await chatbotText(message);
+      const context = getCurrentContextForQuestion();
+      console.log('🧠 Using context for chat:', context);
+
+      await chatbotText(message, context);
+
     } catch (error) {
       console.error('Chat error:', error);
       const errorMessage = { 
@@ -996,90 +1021,127 @@ const SidePanel = () => {
     setCurrentMessage('');
   };
 
-  const readPageForChat = async () => {
+  const readPageForChat = async (forcedUrl = null) => {
+    const myLoadId = ++currentLoadIdRef.current;
     try {
       setIsLoading(true);
       setIsPageContextLoaded(false);
 
-      if (typeof chrome !== 'undefined' && chrome.tabs) {
+      let pageUrl = forcedUrl;
+      if (!pageUrl) {
+        if (typeof chrome === 'undefined' || !chrome.tabs) {
+          setIsLoading(false);
+          return null;
+        }
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const pageUrl = tab.url;
-        
-        console.log('Reading page:', pageUrl);
-        
-        setCurrentPageUrl(pageUrl);
-        setLastReadUrl(pageUrl);
-
-        const extractedData = await extractPageContent(true);
-        if (!extractedData) {
-          console.log('❌ Cannot read this page - extraction failed');
-          setIsLoading(false);
-          setIsPageContextLoaded(false);
-          setPageContext(null);
-          return null;
-        }
-
-        const { content, metadata } = extractedData;
-        
-        if (!content || content.trim().length < 100) {
-          console.log('❌ Cannot read this page - insufficient content');
-          setIsLoading(false);
-          setIsPageContextLoaded(false);
-          setPageContext(null);
-          return null;
-        }
-        
-        const newPageContext = {
-          fullContent: content,
-          metadata: metadata,
-          summary: null,
-          url: pageUrl 
-        };
-        
-        const wordCount = content.split(/\s+/).length;
-        
-        try {
-          if (wordCount > 2000) {
-            const chunks = chunkText(content, 4000);
-            const summaries = [];
-            
-            for (let i = 0; i < Math.min(chunks.length, 3); i++) {
-              isExtractButtonClicked = false;
-              const summary = await summarizeText(chunks[i]);
-              summaries.push(summary.replace(/\*\*Summary.*?\*\*\n\n/g, '').trim());
-            }
-            
-            newPageContext.summary = summaries.join('\n\n');
-          } else {
-            newPageContext.summary = content;
-          }
-        } catch (summaryError) {
-          console.log('⚠️ Could not summarize, using raw content');
-          newPageContext.summary = content.substring(0, 3000);
-        }
-
-        setPageContext(newPageContext);
-
-        console.log('✅ Page context loaded for chat:', {
-          title: metadata.title,
-          contentLength: content.length,
-          summaryLength: newPageContext.summary.length,
-          url: pageUrl
-        });
-
-        setIsPageContextLoaded(true);
-        setIsLoading(false);
-        
-        return newPageContext;
+        pageUrl = tab?.url;
       }
 
+      if (!pageUrl) {
+        setIsLoading(false);
+        return null;
+      }
+
+      console.log('📖 readPageForChat START for', pageUrl, 'loadId', myLoadId);
+
+      setLastReadUrl(pageUrl);
+      lastReadUrlRef.current = pageUrl;
+      setCurrentPageUrl?.(pageUrl);
+
+      const cachedNow = findCachedPage(pageUrl);
+      if (cachedNow) {
+        if (myLoadId === currentLoadIdRef.current) {
+          setPageContext(cachedNow);
+          pageContextRef.current = cachedNow;
+          setIsPageContextLoaded(true);
+          setIsLoading(false);
+          console.log('✅ Immediately used cache inside readPageForChat for', pageUrl);
+        }
+        return cachedNow;
+      }
+
+      const extractedData = await extractPageContent(true);
+      if (myLoadId !== currentLoadIdRef.current) {
+        console.log('⚠️ readPageForChat result discarded (stale) for', pageUrl, 'loadId', myLoadId);
+        return null;
+      }
+
+      if (!extractedData || !extractedData.content || extractedData.content.trim().length < 100) {
+        console.log('❌ Cannot read this page - extraction failed or insufficient for', pageUrl);
+        setIsLoading(false);
+        setIsPageContextLoaded(false);
+        return null;
+      }
+
+      const { content, metadata } = extractedData;
+      const newPageContext = {
+        fullContent: content,
+        metadata,
+        url: pageUrl,
+        timestamp: Date.now(),
+        summary: null,
+      };
+
+      try {
+        const wordCount = content.split(/\s+/).length;
+        if (wordCount > 2000) {
+          const chunks = chunkText(content, 4000);
+          const summaries = [];
+          for (let i = 0; i < Math.min(chunks.length, 3); i++) {
+            const summary = await summarizeText(chunks[i]);
+            summaries.push(summary.replace(/\*\*Summary.*?\*\*\n\n/g, '').trim());
+          }
+          newPageContext.summary = summaries.join('\n\n');
+        } else {
+          newPageContext.summary = content;
+        }
+      } catch (sErr) {
+        console.log('⚠️ Summarize failed, using raw substring');
+        newPageContext.summary = content.substring(0, 3000);
+      }
+
+      if (myLoadId === currentLoadIdRef.current) {
+        setPageContext(newPageContext);
+        pageContextRef.current = newPageContext;
+        setIsPageContextLoaded(true);
+
+        setPageHistory(prev => {
+          const filtered = (prev || []).filter(p => p.url !== pageUrl);
+          const updated = [newPageContext, ...filtered];
+          if (updated.length > 3) updated.pop();
+          pageHistoryRef.current = updated;
+          return updated;
+        });
+
+        console.log('✅ Page context loaded for chat:', { title: metadata?.title, url: pageUrl, loadId: myLoadId });
+        setIsLoading(false);
+        return newPageContext;
+      } else {
+        console.log('⚠️ Aborting write because loadId advanced', myLoadId);
+        return null;
+      }
     } catch (error) {
       console.error('❌ Failed to read page for chat:', error);
-      setIsPageContextLoaded(false);
-      setIsLoading(false);
-      setPageContext(null);
+      if (currentLoadIdRef.current === myLoadId) {
+        setIsLoading(false);
+        setIsPageContextLoaded(false);
+      }
       return null;
     }
+  };
+
+  const getCurrentContextForQuestion = () => {
+    const ctx = pageContextRef.current;
+    if (!ctx) {
+      return { hasContext: false };
+    }
+    return {
+      hasContext: true,
+      contextLength: ctx.summary ? ctx.summary.length : (ctx.fullContent ? Math.min(3000, ctx.fullContent.length) : 0),
+      title: ctx.metadata?.title || '',
+      url: ctx.url,
+      summary: ctx.summary
+    };
   };
 
   const generateRelatedConcepts = async (text) => {
@@ -1519,7 +1581,7 @@ const SidePanel = () => {
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-none'
                         }`}
                       >
-                        
+
                         {message.type !== "user" ? (
                           <div
                             className="text-sm whitespace-pre-line leading-relaxed"
@@ -1787,7 +1849,7 @@ const SidePanel = () => {
         )}
 
         {/* Results with Animation */}
-        {activeTab !== 'chat' && result && (
+        {activeTab !== 'chat' && result && !result.includes('❌') && (
           <div className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h3 className="font-medium text-gray-900 dark:text-white mb-3">Result</h3>
             <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm">
