@@ -50,6 +50,8 @@ const SidePanel = () => {
   const processingQueueRef = useRef([]);
   const isProcessingQueueRef = useRef(false);
   const MAX_PAGE_HISTORY = 20;
+  const [chunkingDepth, setChunkingDepth] = useState({ current: 0, total: 0, level: 1 });
+  const [userCancelledProcessing, setUserCancelledProcessing] = useState(false);
 
   const[favorite, setFavorite] = useState(false);
   const [readingLater, setReadingLater] = useState(false);
@@ -584,6 +586,8 @@ const SidePanel = () => {
       
       console.log('🔍 Checking page context for:', url, 'Prioritize:', prioritize);
 
+      setCurrentPageUrl(url);
+
       const cachedPage = findCachedPage(url);
       if (cachedPage) {
         setPageContext(cachedPage);
@@ -599,7 +603,10 @@ const SidePanel = () => {
       if (prioritize) {
         console.log('⚡ Prioritizing current page read:', url);
         
-        setProcessingQueue(prev => prev.filter(item => item.url !== url));
+        setProcessingQueue([]);
+        processingQueueRef.current = [];
+        
+        currentLoadIdRef.current++;
         
         await readPageForChat(url);
       } else if (!inQueue && url !== lastReadUrlRef.current) {
@@ -739,8 +746,12 @@ const SidePanel = () => {
   ];
 
   
-  const summarizeText = async (text) => {
+  const summarizeText = async (text, depth = 1, maxDepth = 3) => {
     try {
+      if (userCancelledProcessing) {
+        throw new Error('Processing cancelled by user');
+      }
+
       if (!apiSupport.summarizer) {
         throw new Error('❌ Summarizer API not supported');
       }
@@ -760,44 +771,108 @@ const SidePanel = () => {
       const config = detailConfig[detailLevel];
       const format = formatConfig[summaryMode];
 
-      if (isExtractButtonClicked) {
-        // setResult('📄 Summarizing full page content...');
+      const wordCount = text.split(/\s+/).length;
+      const needsChunking = text.length > 4000 || wordCount > 600;
 
-        const chunks = chunkText(text, 4000);
-        console.log(`📊 Split into ${chunks.length} chunks`);
+      if (needsChunking || isExtractButtonClicked) {
+        const chunks = chunkText(text, 3500);
+        console.log(`📊 Split into ${chunks.length} chunks (Depth ${depth}/${maxDepth})`);
+
+        if (depth === 1 && chunks.length > 10) {
+          const estimatedTime = Math.ceil(chunks.length * 3 / 60);
+          const userConfirmed = window.confirm(
+            `⏱️ Large Content Detected!\n\n` +
+            `This will process ${chunks.length} sections and may take approximately ${estimatedTime} minute${estimatedTime > 1 ? 's' : ''}.\n\n` +
+            `Click OK to continue or Cancel to stop.\n\n` +
+            `💡 Tip: For faster results, try selecting smaller portions of text.`
+          );
+
+          if (!userConfirmed) {
+            setUserCancelledProcessing(true);
+            const recommendation = `❌ Processing cancelled.\n\n` +
+              `**Recommendations:**\n` +
+              `• Select a smaller portion of the page (e.g., specific sections or paragraphs)\n` +
+              `• Use the browser's "Find" feature (Ctrl/Cmd+F) to locate specific content\n` +
+              `• Try summarizing one section at a time for better control\n` +
+              `• Consider using "Concise" detail level for faster processing\n\n` +
+              `**Current text size:** ${text.length.toLocaleString()} characters, ${wordCount.toLocaleString()} words`;
+            setResult(recommendation);
+            setIsLoading(false);
+            return recommendation;
+          }
+        }
+
+        setChunkingDepth({ current: depth, total: maxDepth, level: chunks.length });
 
         const chunkSummaries = [];
 
         for (let i = 0; i < chunks.length; i++) {
-          // setResult(`🔄 Processing section ${i + 1}/${chunks.length}...`);
+          if (userCancelledProcessing) {
+            throw new Error('Processing cancelled by user');
+          }
 
+          const progressText =  `📄 Processing section ${i + 1}/${chunks.length}  (${depth}/${maxDepth})...`;
+          setResult(progressText);
+
+          const tempExtractFlag = isExtractButtonClicked;
           isExtractButtonClicked = false;
-          const chunkSummary = await summarizeText(chunks[i]);
-          isExtractButtonClicked = true;
-
-          const cleanSummary = chunkSummary
-            .replace(/\*\*Summary.*?\*\*\n\n/g, '')
-            .trim();
-
-          chunkSummaries.push(cleanSummary);
+          
+          try {
+            const chunkSummary = await summarizeText(chunks[i], depth + 1, maxDepth);
+            const cleanSummary = chunkSummary
+              .replace(/^\s*•\s*/gm, '')
+              .replace(/\*\*Summary.*?\*\*\n\n/g, '')
+              .replace(/\*\*Full Content Summary.*?\*\*\n\n/g, '')
+              .replace(/---\n\*Processed \d+ sections\*/g, '')
+              .trim();
+            chunkSummaries.push(cleanSummary);
+          } catch (chunkError) {
+            console.error(`Error processing chunk ${i + 1}:`, chunkError);
+            if (chunkError.message === 'Processing cancelled by user') {
+              throw chunkError;
+            }
+            const sentences = chunks[i].split(/[.!?]+/).filter(s => s.trim().length > 10);
+            const fallbackSummary = sentences.slice(0, 3).join('. ') + '.';
+            chunkSummaries.push(fallbackSummary);
+          }
+          
+          isExtractButtonClicked = tempExtractFlag;
         }
 
         setResult('✨ Combining all section summaries...');
         const combinedSummaries = chunkSummaries.join('\n\n');
 
         let finalSummary;
-        if (combinedSummaries.split(/\s+/).length > 2000) {
+        if (combinedSummaries.split(/\s+/).length > 1500 && depth < maxDepth) {
           isExtractButtonClicked = false;
-          finalSummary = await summarizeText(combinedSummaries);
+          try {
+            finalSummary = await summarizeText(combinedSummaries, depth + 1, maxDepth);
+            finalSummary = finalSummary
+              .replace(/^\s*•\s*/gm, '')
+              .replace(/\*\*Summary.*?\*\*\n\n/g, '')
+              .replace(/\*\*Full Content Summary.*?\*\*\n\n/g, '')
+              .replace(/---\n\*Processed \d+ sections\*/g, '')
+              .trim();
+          } catch (finalError) {
+            console.error('Error in final summarization:', finalError);
+            if (finalError.message === 'Processing cancelled by user') {
+              throw finalError;
+            }
+            finalSummary = combinedSummaries;
+          }
           isExtractButtonClicked = true;
         } else {
           finalSummary = combinedSummaries;
         }
 
-        const result = `**Full Page Summary (${detailLevel.charAt(0).toUpperCase() + detailLevel.slice(1)} - ${summaryMode === 'bullets' ? 'Bullet Points' : summaryMode === 'paragraph' ? 'Paragraph' : 'Q&A'})**\n\n${finalSummary}\n\n---\n*Processed ${chunks.length} sections*`;
-
-        setResult(result);
-        return result;
+        if (depth === 1) {
+          const result = `**Full Content Summary (${detailLevel.charAt(0).toUpperCase() + detailLevel.slice(1)} - ${summaryMode === 'bullets' ? 'Bullet Points' : summaryMode === 'paragraph' ? 'Paragraph' : 'Q&A'})**\n\n${finalSummary}\n\n---\n*Processed ${chunks.length} sections*`;
+          setResult(result);
+          setUserCancelledProcessing(false);
+          return result;
+        } else {
+          return finalSummary;
+        }
       }
 
       const summarizer = await Summarizer.create({
@@ -805,12 +880,6 @@ const SidePanel = () => {
         format: format,
         length: config.length,
         outputLanguage: 'en',
-        // monitor(m) {
-        //   m.addEventListener('downloadprogress', (e) => {
-        //     const percent = Math.round((e.loaded / e.total) * 100);
-        //     console.log(`Downloading summarizer model: ${percent}% (${e.loaded}/${e.total})`);
-        //   });
-        // }
       });
 
       let summary = await summarizer.summarize(text, { outputLanguage: "en" });
@@ -827,7 +896,7 @@ const SidePanel = () => {
         }
 
         const prompt = `
-          Based on the following summary, generate minimum 3, maxmimum 5 as more as possible detailed Q&A pairs.
+          Based on the following summary, generate minimum 3, maximum 5 detailed Q&A pairs.
           - Cover background, detailed reasoning, potential implications, and author's perspective.
           - Keep answers concise but informative.
           Summary:
@@ -840,22 +909,28 @@ const SidePanel = () => {
           A2: ...
         `;
 
-        const session = await LanguageModel.create({
-          // monitor(m) {
-          //   m.addEventListener("downloadprogress", (e) => {
-          //     console.log(`Downloaded prompt language model: ${e.loaded * 100}%`);
-          //   });
-          // },
-        });
-
+        const session = await LanguageModel.create();
         const extraQA = await session.prompt(prompt);
         summary = `**In-Depth Q&A Based on Summary:**\n${extraQA}`;
+        session.destroy();
       }
 
-      return `**Summary (${detailLevel.charAt(0).toUpperCase() + detailLevel.slice(1)} - ${summaryMode === 'bullets' ? 'Bullet Points' : summaryMode === 'paragraph' ? 'Paragraph' : 'Q&A'}):**\n\n${summary}`;
+      if (depth > 1) {
+        summary = summary.replace(/^\s*•\s*/gm, '');
+      }
+
+      if (depth === 1) {
+        return `**Summary (${detailLevel.charAt(0).toUpperCase() + detailLevel.slice(1)} - ${summaryMode === 'bullets' ? 'Bullet Points' : summaryMode === 'paragraph' ? 'Paragraph' : 'Q&A'}):**\n\n${summary}`;
+      } else {
+        return summary;
+      }
 
     } catch (error) {
       console.error('⚠️ Summarizer API error:', error);
+
+      if (error.message === 'Processing cancelled by user') {
+        throw error;
+      }
 
       const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
       const pointCount = detailLevel === 'concise' ? 3 : detailLevel === 'standard' ? 5 : 7;
@@ -996,17 +1071,15 @@ const SidePanel = () => {
     const askingAboutCurrentPage = /\b(this|current|the)\s+(page|article|webpage|site|content|document)\b/i.test(text);
     
     console.log('🔍 Current pageContext:', pageContext);
-    console.log('📝 User asking about current page:', askingAboutCurrentPage);
+    console.log('🔍 User asking about current page:', askingAboutCurrentPage);
     
     try {
+      const userMessage = { type: 'user', content: text, timestamp: Date.now() };
+      setChatHistory(prev => [...prev, userMessage]);
+
       if (askingAboutCurrentPage && (!pageContext || !pageContext.summary)) {
         console.log("⚡ User asking about current page - prioritizing load!");
         
-        // Add user message first
-        const userMessage = { type: 'user', content: text, timestamp: Date.now() };
-        setChatHistory(prev => [...prev, userMessage]);
-        
-        // Add bot "reading" message
         const readingMessage = { 
           type: 'bot', 
           content: '📖 Hardworking on reading the page... please wait', 
@@ -1015,19 +1088,13 @@ const SidePanel = () => {
         };
         setChatHistory(prev => [...prev, readingMessage]);
         
-        // Prioritize reading the page
         await checkAndLoadPageContext(true);
         
-        // Remove the reading message
         setChatHistory(prev => prev.filter(msg => msg.content !== '📖 Hardworking on reading the page... please wait'));
         
       } else if (!pageContext || !pageContext.summary) {
         console.log("⚠️ No page context yet, checking normally...");
         await checkAndLoadPageContext(false);
-      } else {
-        // Add user message for normal flow
-        const userMessage = { type: 'user', content: text, timestamp: Date.now() };
-        setChatHistory(prev => [...prev, userMessage]);
       }
 
       setIsStreaming(true);
@@ -1092,12 +1159,6 @@ const SidePanel = () => {
         sourceTag = "local";
       }
 
-      // Only add user message if not already added (for prioritize case)
-      if (!askingAboutCurrentPage || (pageContext && pageContext.summary)) {
-        const userMessage = { type: 'user', content: text, timestamp: Date.now() };
-        setChatHistory(prev => [...prev, userMessage]);
-      }
-
       const response = await chatbot.prompt(prompt);
 
       const botMessage = { type: 'bot', content: response, source: sourceTag, timestamp: Date.now() };
@@ -1119,10 +1180,13 @@ const SidePanel = () => {
     setCurrentMessage('');
     
     try {
-      const context = getCurrentContextForQuestion();
-      console.log('🧠 Using context for chat:', context);
+      const askingAboutCurrentPage = /\b(this|current|the)\s+(page|article|webpage|site|content|document)\b/i.test(message);
+      
+      if (askingAboutCurrentPage) {
+        await checkAndLoadPageContext(true);
+      }
 
-      await chatbotText(message, context);
+      await chatbotText(message);
 
     } catch (error) {
       console.error('Chat error:', error);
@@ -1434,6 +1498,7 @@ const SidePanel = () => {
 
     setIsLoading(true);
     setResult('');
+    setUserCancelledProcessing(false);
     
     try {
       let processedResult = '';
@@ -1470,7 +1535,10 @@ const SidePanel = () => {
       setResult(processedResult);
     } catch (error) {
       console.error('Processing error:', error);
-      setResult('An error occurred while processing the text. Please try again.');
+      if (error.message === 'Processing cancelled by user') {
+      } else {
+        setResult('An error occurred while processing the text. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1969,7 +2037,7 @@ const SidePanel = () => {
             {isLoading ? (
               <div className="flex items-center justify-center space-x-2">
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span>Processing...</span>
+                <span>{result.includes('Processing section') ? result.replace('📄 ', '').replace('🌐 ', '').replace('💡 ', '') : 'Processing...'}</span>
               </div>
             ) : (
               `${tabs.find(t => t.id === activeTab)?.label} Text`
