@@ -489,9 +489,11 @@ const SidePanel = () => {
 
   function extractWithReadability() {
     try {
+      console.log('🔍 Starting extraction with Readability...');
       const documentClone = document.cloneNode(true);
       
       if (typeof Readability !== 'undefined') {
+        console.log('✅ Readability available, parsing...');
         const article = new Readability(documentClone, {
           debug: false,
           maxElemsToParse: 0,
@@ -500,6 +502,11 @@ const SidePanel = () => {
         }).parse();
 
         if (article) {
+          console.log('✅ Readability parsed article:', {
+            title: article.title,
+            contentLength: article.textContent?.length,
+            excerpt: article.excerpt
+          });
           return {
             content: article.textContent,
             metadata: {
@@ -511,9 +518,14 @@ const SidePanel = () => {
               publishedTime: article.publishedTime
             }
           };
+        } else {
+          console.warn('⚠️ Readability returned null, trying fallback...');
         }
+      } else {
+        console.warn('⚠️ Readability not available, using fallback...');
       }
 
+      // Fallback selectors
       const selectors = [
         'article',
         '[role="main"]',
@@ -521,23 +533,29 @@ const SidePanel = () => {
         '.post-content', 
         '.entry-content',
         'main',
-        '#content'
+        '#content',
+        '#mw-content-text' // Wikipedia specific
       ];
       
       for (const selector of selectors) {
         const element = document.querySelector(selector);
         if (element && element.innerText.trim()) {
+          console.log('✅ Found content with selector:', selector);
+          const content = element.innerText.trim();
+          console.log('📄 Content length:', content.length);
           return {
-            content: element.innerText.trim(),
+            content: content,
             metadata: {
               title: document.title,
-              length: element.innerText.length
+              length: content.length
             }
           };
         }
       }
       
+      console.log('⚠️ No selector matched, using body text');
       const bodyText = document.body.innerText.trim();
+      console.log('📄 Body text length:', bodyText.length);
       return {
         content: bodyText,
         metadata: {
@@ -546,7 +564,7 @@ const SidePanel = () => {
         }
       };
     } catch (error) {
-      console.error('Extraction error:', error);
+      console.error('❌ Extraction error:', error);
       return {
         content: document.body.innerText.trim(),
         metadata: { title: document.title }
@@ -585,8 +603,18 @@ const SidePanel = () => {
       const url = tab.url;
       
       console.log('🔍 Checking page context for:', url, 'Prioritize:', prioritize);
+      console.log('🔍 Current pageContext URL:', pageContextRef.current?.url);
 
+      // Always update current URL immediately
       setCurrentPageUrl(url);
+
+      // Check if we already have the correct page context loaded
+      if (pageContextRef.current?.url === url) {
+        setIsPageContextLoaded(true);
+        setIsLoading(false);
+        console.log('✅ Page context already loaded for current URL');
+        return;
+      }
 
       const cachedPage = findCachedPage(url);
       if (cachedPage) {
@@ -603,6 +631,7 @@ const SidePanel = () => {
       if (prioritize) {
         console.log('⚡ Prioritizing current page read:', url);
         
+        // Clear all queued items and stop current processing
         setProcessingQueue([]);
         processingQueueRef.current = [];
         
@@ -616,10 +645,6 @@ const SidePanel = () => {
         if (!isProcessingQueueRef.current) {
           processQueue();
         }
-      } else if (url === lastReadUrlRef.current && pageContextRef.current) {
-        setIsPageContextLoaded(true);
-        setIsLoading(false);
-        console.log('✅ Page context already loaded for this URL');
       }
     } catch (err) {
       console.log('⚠️ Cannot read this page, ignoring:', err.message);
@@ -757,19 +782,22 @@ const SidePanel = () => {
       }
 
       const detailConfig = {
-        concise: { type: 'tldr', length: 'short' },
-        standard: { type: 'key-points', length: 'medium' },
-        detailed: { type: 'key-points', length: 'long' }
+        concise: { length: 'short' },
+        standard: { length: 'medium' },
+        detailed: { length: 'long' }
       };
 
       const formatConfig = {
-        bullets: 'markdown',
-        paragraph: 'plain-text',
-        qa: 'markdown'
+        bullets: { type: 'key-points', output: 'markdown' },
+        paragraph: { type: 'tldr', output: 'plain-text' },
+        qa: { type: 'tldr', output: 'markdown' }
       };
 
       const config = detailConfig[detailLevel];
       const format = formatConfig[summaryMode];
+
+      let summaryType = format.type;
+      if (summaryMode === 'qa') summaryType = 'tldr';
 
       const wordCount = text.split(/\s+/).length;
       const needsChunking = text.length > 4000 || wordCount > 600;
@@ -811,7 +839,9 @@ const SidePanel = () => {
             throw new Error('Processing cancelled by user');
           }
 
-          const progressText =  `📄 Processing section ${i + 1}/${chunks.length}  (${depth}/${maxDepth})...`;
+          const progressText = depth > 1 
+            ? `📄 Processing section ${i + 1}/${chunks.length}... (${depth}/${maxDepth})`
+            : `📄 Processing section ${i + 1}/${chunks.length}...`;
           setResult(progressText);
 
           const tempExtractFlag = isExtractButtonClicked;
@@ -819,12 +849,19 @@ const SidePanel = () => {
           
           try {
             const chunkSummary = await summarizeText(chunks[i], depth + 1, maxDepth);
-            const cleanSummary = chunkSummary
-              .replace(/^\s*•\s*/gm, '')
+            
+            let cleanSummary = chunkSummary;
+            
+            if (summaryMode !== 'bullets') {
+              cleanSummary = cleanSummary.replace(/^\s*•\s*/gm, '');
+            }
+
+            cleanSummary = cleanSummary
               .replace(/\*\*Summary.*?\*\*\n\n/g, '')
               .replace(/\*\*Full Content Summary.*?\*\*\n\n/g, '')
               .replace(/---\n\*Processed \d+ sections\*/g, '')
               .trim();
+            
             chunkSummaries.push(cleanSummary);
           } catch (chunkError) {
             console.error(`Error processing chunk ${i + 1}:`, chunkError);
@@ -840,7 +877,9 @@ const SidePanel = () => {
         }
 
         setResult('✨ Combining all section summaries...');
-        const combinedSummaries = chunkSummaries.join('\n\n');
+        
+        let combinedSummaries;
+        combinedSummaries = chunkSummaries.join('\n\n');
 
         let finalSummary;
         if (combinedSummaries.split(/\s+/).length > 1500 && depth < maxDepth) {
@@ -848,7 +887,6 @@ const SidePanel = () => {
           try {
             finalSummary = await summarizeText(combinedSummaries, depth + 1, maxDepth);
             finalSummary = finalSummary
-              .replace(/^\s*•\s*/gm, '')
               .replace(/\*\*Summary.*?\*\*\n\n/g, '')
               .replace(/\*\*Full Content Summary.*?\*\*\n\n/g, '')
               .replace(/---\n\*Processed \d+ sections\*/g, '')
@@ -876,8 +914,8 @@ const SidePanel = () => {
       }
 
       const summarizer = await Summarizer.create({
-        type: config.type,
-        format: format,
+        type: format.type,
+        format: format.output,
         length: config.length,
         outputLanguage: 'en',
       });
@@ -913,10 +951,6 @@ const SidePanel = () => {
         const extraQA = await session.prompt(prompt);
         summary = `**In-Depth Q&A Based on Summary:**\n${extraQA}`;
         session.destroy();
-      }
-
-      if (depth > 1) {
-        summary = summary.replace(/^\s*•\s*/gm, '');
       }
 
       if (depth === 1) {
@@ -1070,27 +1104,42 @@ const SidePanel = () => {
 
     const askingAboutCurrentPage = /\b(this|current|the)\s+(page|article|webpage|site|content|document)\b/i.test(text);
     
+    // Add user message immediately
+    const userMessage = { type: 'user', content: text, timestamp: Date.now() };
+    setChatHistory(prev => [...prev, userMessage]);
+    
     console.log('🔍 Current pageContext:', pageContext);
+    console.log('🔍 Current URL:', currentPageUrl);
+    console.log('🔍 PageContext URL:', pageContext?.url);
     console.log('🔍 User asking about current page:', askingAboutCurrentPage);
     
     try {
-      const userMessage = { type: 'user', content: text, timestamp: Date.now() };
-      setChatHistory(prev => [...prev, userMessage]);
-
-      if (askingAboutCurrentPage && (!pageContext || !pageContext.summary)) {
+      // Check if we need to load the current page context
+      const pageContextMismatch = pageContext?.url !== currentPageUrl;
+      const needsCurrentPageLoad = askingAboutCurrentPage && 
+        (!pageContext || pageContextMismatch);
+      
+      if (needsCurrentPageLoad) {
         console.log("⚡ User asking about current page - prioritizing load!");
+        console.log("⚡ Mismatch detected:", {
+          currentUrl: currentPageUrl,
+          contextUrl: pageContext?.url
+        });
         
+        // Show loading message immediately
         const readingMessage = { 
           type: 'bot', 
-          content: '📖 Hardworking on reading the page... please wait', 
+          content: '📖 Reading the current page... please wait', 
           source: 'system',
           timestamp: Date.now() 
         };
         setChatHistory(prev => [...prev, readingMessage]);
         
+        // Load the current page with priority
         await checkAndLoadPageContext(true);
         
-        setChatHistory(prev => prev.filter(msg => msg.content !== '📖 Hardworking on reading the page... please wait'));
+        // Remove loading message
+        setChatHistory(prev => prev.filter(msg => msg.content !== '📖 Reading the current page... please wait'));
         
       } else if (!pageContext || !pageContext.summary) {
         console.log("⚠️ No page context yet, checking normally...");
@@ -1101,9 +1150,11 @@ const SidePanel = () => {
 
       let prompt = text;
 
-      if (pageContext && (pageContext.summary || pageContext.fullContent)) {
-        const contextToUse = pageContext.summary || pageContext.fullContent.substring(0, 3000);
-        prompt = `Context: I'm reading a webpage titled "${pageContext.metadata?.title || 'Unknown'}".
+      // Use the current page context ONLY if URL matches
+      const currentContext = pageContextRef.current;
+      if (currentContext && currentContext.url === currentPageUrl && (currentContext.summary || currentContext.fullContent)) {
+        const contextToUse = currentContext.summary || currentContext.fullContent.substring(0, 3000);
+        prompt = `Context: I'm reading a webpage titled "${currentContext.metadata?.title || 'Unknown'}" at ${currentContext.url}.
 
           Page Summary:
           ${contextToUse}
@@ -1115,10 +1166,15 @@ const SidePanel = () => {
         console.log('Using page context for chat:', {
           hasContext: true,
           contextLength: contextToUse.length,
-          title: pageContext.metadata?.title
+          title: currentContext.metadata?.title,
+          url: currentContext.url
         });
       } else {
-        console.log('No page context available');
+        console.log('No page context available or URL mismatch:', {
+          hasContext: !!currentContext,
+          contextUrl: currentContext?.url,
+          currentUrl: currentPageUrl
+        });
       }
 
       const needCloudMixing = (
@@ -1180,14 +1236,7 @@ const SidePanel = () => {
     setCurrentMessage('');
     
     try {
-      const askingAboutCurrentPage = /\b(this|current|the)\s+(page|article|webpage|site|content|document)\b/i.test(message);
-      
-      if (askingAboutCurrentPage) {
-        await checkAndLoadPageContext(true);
-      }
-
       await chatbotText(message);
-
     } catch (error) {
       console.error('Chat error:', error);
       const errorMessage = { 
@@ -1211,6 +1260,8 @@ const SidePanel = () => {
       setIsPageContextLoaded(false);
 
       let pageUrl = forcedUrl;
+      let tabId = null;
+      
       if (!pageUrl) {
         if (typeof chrome === 'undefined' || !chrome.tabs) {
           setIsLoading(false);
@@ -1218,14 +1269,24 @@ const SidePanel = () => {
         }
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         pageUrl = tab?.url;
+        tabId = tab?.id;
+      } else {
+        // If we have a forced URL, we need to get the tab ID for that URL
+        if (typeof chrome !== 'undefined' && chrome.tabs) {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tab?.url === forcedUrl) {
+            tabId = tab.id;
+          }
+        }
       }
 
       if (!pageUrl) {
+        console.error('❌ No URL to read');
         setIsLoading(false);
         return null;
       }
 
-      console.log('📖 readPageForChat START for', pageUrl, 'loadId', myLoadId);
+      console.log('📖 readPageForChat START for', pageUrl, 'loadId', myLoadId, 'tabId', tabId);
 
       setLastReadUrl(pageUrl);
       lastReadUrlRef.current = pageUrl;
@@ -1233,6 +1294,13 @@ const SidePanel = () => {
 
       const cachedNow = findCachedPage(pageUrl);
       if (cachedNow) {
+        console.log('📦 Found cached page:', {
+          url: cachedNow.url,
+          contentLength: cachedNow.fullContent?.length,
+          summaryLength: cachedNow.summary?.length,
+          title: cachedNow.metadata?.title
+        });
+        
         if (myLoadId === currentLoadIdRef.current) {
           setPageContext(cachedNow);
           pageContextRef.current = cachedNow;
@@ -1243,20 +1311,44 @@ const SidePanel = () => {
         return cachedNow;
       }
 
-      const extractedData = await extractPageContent(true);
+      console.log('🔄 No cache found, extracting fresh content...');
+      
+      // Pass the specific URL to extractPageContent
+      const extractedData = await extractPageContentForUrl(pageUrl, tabId);
+      
+      console.log('📄 Extraction completed:', {
+        hasData: !!extractedData,
+        contentLength: extractedData?.content?.length,
+        metadataTitle: extractedData?.metadata?.title,
+        loadId: myLoadId,
+        currentLoadId: currentLoadIdRef.current
+      });
+      
       if (myLoadId !== currentLoadIdRef.current) {
         console.log('⚠️ readPageForChat result discarded (stale) for', pageUrl, 'loadId', myLoadId);
         return null;
       }
 
       if (!extractedData || !extractedData.content || extractedData.content.trim().length < 100) {
-        console.log('⚠️ Cannot read this page - extraction failed or insufficient for', pageUrl);
+        console.error('❌ Cannot read this page - extraction failed or insufficient', {
+          hasExtractedData: !!extractedData,
+          hasContent: !!extractedData?.content,
+          contentLength: extractedData?.content?.length,
+          url: pageUrl
+        });
         setIsLoading(false);
         setIsPageContextLoaded(false);
         throw new Error('Page content extraction failed');
       }
 
       const { content, metadata } = extractedData;
+      
+      console.log('✅ Valid content extracted:', {
+        contentLength: content.length,
+        contentPreview: content.substring(0, 300),
+        title: metadata.title
+      });
+      
       const newPageContext = {
         fullContent: content,
         metadata,
@@ -1266,22 +1358,37 @@ const SidePanel = () => {
       };
 
       try {
+        console.log('📝 Starting summarization...');
         const wordCount = content.split(/\s+/).length;
+        console.log('📊 Word count:', wordCount);
+        
         if (wordCount > 2000) {
           const chunks = chunkText(content, 4000);
+          console.log('✂️ Split into', chunks.length, 'chunks');
           const summaries = [];
           for (let i = 0; i < Math.min(chunks.length, 3); i++) {
+            console.log(`📝 Summarizing chunk ${i + 1}...`);
             const summary = await summarizeText(chunks[i]);
             summaries.push(summary.replace(/\*\*Summary.*?\*\*\n\n/g, '').trim());
           }
           newPageContext.summary = summaries.join('\n\n');
+          console.log('✅ Summary created:', newPageContext.summary.substring(0, 200));
         } else {
+          console.log('📝 Using full content as summary (short text)');
           newPageContext.summary = content;
         }
       } catch (sErr) {
-        console.log('⚠️ Summarize failed, using raw substring');
+        console.error('⚠️ Summarize failed:', sErr);
         newPageContext.summary = content.substring(0, 3000);
       }
+
+      console.log('💾 Saving page context:', {
+        url: newPageContext.url,
+        fullContentLength: newPageContext.fullContent.length,
+        summaryLength: newPageContext.summary.length,
+        title: newPageContext.metadata.title,
+        loadId: myLoadId
+      });
 
       if (myLoadId === currentLoadIdRef.current) {
         setPageContext(newPageContext);
@@ -1298,6 +1405,7 @@ const SidePanel = () => {
           }
           
           pageHistoryRef.current = updated;
+          console.log('📚 Page history updated:', updated.map(p => ({ url: p.url, title: p.metadata?.title })));
           return updated;
         });
 
@@ -1314,12 +1422,106 @@ const SidePanel = () => {
         return null;
       }
     } catch (error) {
-      console.log('⚠️ Failed to read page, ignoring:', error.message);
+      console.error('❌ Failed to read page:', error);
       if (currentLoadIdRef.current === myLoadId) {
         setIsLoading(false);
         setIsPageContextLoaded(false);
       }
       throw error;
+    }
+  };
+
+  const extractPageContentForUrl = async (url, tabId = null) => {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        // If we don't have a tabId, get the active tab
+        let targetTabId = tabId;
+        let currentTab = null;
+        
+        if (!targetTabId) {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          currentTab = tab;
+          targetTabId = tab?.id;
+          
+          // Verify the URL matches
+          if (tab?.url !== url) {
+            console.warn('⚠️ Current tab URL does not match requested URL', {
+              tabUrl: tab?.url,
+              requestedUrl: url
+            });
+            // Still try to extract if we have a tab ID
+          }
+        }
+        
+        if (!targetTabId) {
+          console.error('❌ No valid tab ID found');
+          return null;
+        }
+
+        console.log('📄 Extracting content from tab', targetTabId, 'for URL:', url);
+        
+        const cacheKey = `page_${targetTabId}_${url}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        
+        if (cached) {
+          const { content, metadata, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < 5 * 60 * 1000) {
+            console.log('✅ Using cached content for extraction', {
+              contentLength: content.length,
+              title: metadata.title
+            });
+            return { content, metadata };
+          } else {
+            console.log('⏰ Cache expired, re-extracting');
+          }
+        }
+
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: targetTabId },
+          function: extractWithReadability
+        });
+
+        console.log('📄 Extraction results:', results);
+
+        if (results && results[0] && results[0].result) {
+          const { content, metadata } = results[0].result;
+          
+          console.log('📄 Extracted raw data:', {
+            contentLength: content?.length,
+            contentPreview: content?.substring(0, 200),
+            title: metadata?.title,
+            url: url
+          });
+
+          if (!content || content.trim().length < 50) {
+            console.error('❌ Extracted content is too short or empty');
+            return null;
+          }
+          
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            content,
+            metadata,
+            timestamp: Date.now()
+          }));
+
+          console.log('✅ Successfully extracted:', {
+            title: metadata.title,
+            length: content.length,
+            words: content.split(/\s+/).length,
+            url: url
+          });
+
+          return { content, metadata };
+        } else {
+          console.error('❌ No results from extraction script');
+          return null;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Error extracting page content:', error);
+      return null;
     }
   };
 
@@ -2046,228 +2248,240 @@ const SidePanel = () => {
         )}
 
         {/* Results with Animation */}
-        {activeTab !== 'chat' && result && !result.includes('❌') && (
+        {activeTab !== 'chat' && result && !isLoading && !result.includes('❌') && !result.includes('cancelled') && (
           <div className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h3 className="font-medium text-gray-900 dark:text-white mb-3">Result</h3>
             <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm">
-            <div
-              className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
-              dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(marked(result)),
-              }}
-            />
+              <div
+                className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(marked(result)),
+                }}
+              />
             </div>
-              <div className="flex items-center gap-2 mt-3">
-                {(activeTab === 'summarize' || activeTab === 'explain') && (
-                  <>
+            <div className="flex items-center gap-2 mt-3">
+              {(activeTab === 'summarize' || activeTab === 'explain') && (
+                <>
                   <button 
                     onClick={() => setActivePanel(activePanel === "analysis" ? null : "analysis")}
-                    className="px-3 py-1 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded-md hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                    className={`px-3 py-1 text-xs rounded-md transition-all duration-300 transform hover:scale-105 active:scale-95 ${
+                      activePanel === "analysis"
+                        ? 'bg-blue-500 text-white shadow-lg scale-105'
+                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800'
+                    }`}
                   >
                     📊 Concise analysis
                   </button>
                   <button 
                     onClick={() => setActivePanel(activePanel === "related" ? null : "related")}
-                    className="px-3 py-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 rounded-md hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
+                    className={`px-3 py-1 text-xs rounded-md transition-all duration-300 transform hover:scale-105 active:scale-95 ${
+                      activePanel === "related"
+                        ? 'bg-amber-500 text-white shadow-lg scale-105'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800'
+                    }`}
                   >
                     🔗 Related topic
                   </button>
                 </>
-                )}
-                <button 
-                  onClick={() => setActivePanel(activePanel === "save" ? null : "save")}
-                  className="px-3 py-1 text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 rounded-md hover:bg-green-200 dark:hover:bg-green-800 transition-colors"
-                >
-                  💾 Save
-                </button>
-              </div>
-
-              {activePanel === "analysis" && (
-                <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
-                  <h3 className="font-semibold text-lg mb-2 text-black dark:text-white">📊 Text Analysis Report</h3>
-                  
-                  {(() => {
-                    const analysis = performQuickAnalysis(selectedText);
-
-                    return (
-                      <>
-                        <p className="text-sm text-black dark:text-white">📝 <b>Basic Info</b></p>
-                        <ul className="text-sm ml-4 list-disc text-black dark:text-white">
-                          <li>Characters: {analysis.charCount}</li>
-                          <li>Sentences: {analysis.sentenceCount}</li>
-                          <li>Paragraphs: {analysis.paragraphCount}</li>
-                          <li>Reading time: ~{analysis.readingTime} min</li>
-                        </ul>
-
-                        <p className="text-sm mt-2 text-black dark:text-white">🎯 <b>Content Features</b></p>
-                        <ul className="text-sm ml-4 list-disc text-black dark:text-white">
-                          <li>Text type: {analysis.textType}</li>
-                          <li>Key entities: {analysis.entities.join(", ") || "None detected"}</li>
-                        </ul>
-
-                        <p className="text-sm mt-2 text-black dark:text-white">🔍 <b>Reading Suggestion</b></p>
-                        <ul className="text-sm ml-4 list-disc text-black dark:text-white">
-                          <li>Audience: Students / General readers</li>
-                          <li>Difficulty: {analysis.difficulty}</li>
-                        </ul>
-                      </>
-                    );
-                  })()}
-                </div>
               )}
+              <button 
+                onClick={() => setActivePanel(activePanel === "save" ? null : "save")}
+                className={`px-3 py-1 text-xs rounded-md transition-all duration-300 transform hover:scale-105 active:scale-95 ${
+                  activePanel === "save"
+                    ? 'bg-green-500 text-white shadow-lg scale-105'
+                    : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800'
+                }`}
+              >
+                💾 Save
+              </button>
+            </div>
 
-                {activePanel === "save" && (
-                  <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
-                    <p className="font-semibold text-lg mb-3 text-black dark:text-white">💾 Save Notes</p>
+            {activePanel === "analysis" && (
+              <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 animate-in fade-in slide-in-from-top-2 duration-300">
+                <h3 className="font-semibold text-lg mb-2 text-black dark:text-white">📊 Text Analysis Report</h3>
+                
+                {(() => {
+                  const analysis = performQuickAnalysis(selectedText);
 
-                    {/* Title */}
-                    <label className="block text-sm mb-1 text-black dark:text-white">
-                      Title <span className="text-red-500">*</span>
-                    </label>
+                  return (
+                    <>
+                      <p className="text-sm text-black dark:text-white">📝 <b>Basic Info</b></p>
+                      <ul className="text-sm ml-4 list-disc text-black dark:text-white">
+                        <li>Characters: {analysis.charCount}</li>
+                        <li>Sentences: {analysis.sentenceCount}</li>
+                        <li>Paragraphs: {analysis.paragraphCount}</li>
+                        <li>Reading time: ~{analysis.readingTime} min</li>
+                      </ul>
+
+                      <p className="text-sm mt-2 text-black dark:text-white">🎯 <b>Content Features</b></p>
+                      <ul className="text-sm ml-4 list-disc text-black dark:text-white">
+                        <li>Text type: {analysis.textType}</li>
+                        <li>Key entities: {analysis.entities.join(", ") || "None detected"}</li>
+                      </ul>
+
+                      <p className="text-sm mt-2 text-black dark:text-white">📚 <b>Reading Suggestion</b></p>
+                      <ul className="text-sm ml-4 list-disc text-black dark:text-white">
+                        <li>Audience: Students / General readers</li>
+                        <li>Difficulty: {analysis.difficulty}</li>
+                      </ul>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {activePanel === "save" && (
+              <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 animate-in fade-in slide-in-from-top-2 duration-300">
+                <p className="font-semibold text-lg mb-3 text-black dark:text-white">💾 Save Notes</p>
+
+                {/* Title */}
+                <label className="block text-sm mb-1 text-black dark:text-white">
+                  Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Enter a title..."
+                  className="w-full px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white mb-3"
+                />
+
+                {/* NoteSpace */}
+                {/* <label className="block text-sm mb-1 text-black dark:text-white">
+                  NoteSpace <span className="text-red-500">*</span>
+                </label>
+                <div className="flex gap-2 mb-3">
+                  <select
+                    value={selectedNoteSpace}
+                    onChange={(e) => setSelectedNoteSpace(e.target.value)}
+                    className="flex-1 px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white"
+                  >
+                    <option value="">-- Select a NoteSpace --</option>
+                    {noteSpaces.map((space, idx) => (
+                      <option key={idx} value={space}>{space}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      const newSpace = prompt("Enter new NoteSpace name:");
+                      if (newSpace && !noteSpaces.includes(newSpace)) {
+                        setNoteSpaces([...noteSpaces, newSpace]);
+                        setSelectedNoteSpace(newSpace);
+                      }
+                    }}
+                    className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  >
+                    + Create
+                  </button>
+                </div> */}
+
+                <label className="block text-sm mb-1 text-black dark:text-white">
+                  Tags
+                </label>
+                <div className="mt-2 flex flex-col gap-2">
+                  <div className="flex gap-2">
                     <input
                       type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="Enter a title..."
-                      className="w-full px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white mb-3"
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      placeholder="Enter a tag..."
+                      className="flex-1 px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white"
                     />
-
-                    {/* NoteSpace */}
-                    {/* <label className="block text-sm mb-1 text-black dark:text-white">
-                      NoteSpace <span className="text-red-500">*</span>
-                    </label>
-                    <div className="flex gap-2 mb-3">
-                      <select
-                        value={selectedNoteSpace}
-                        onChange={(e) => setSelectedNoteSpace(e.target.value)}
-                        className="flex-1 px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white"
+                    <button
+                      onClick={() => {
+                        if (newCategory.trim()) {
+                          setCategories([...categories, newCategory.trim()]);
+                          setNewCategory("");
+                        }
+                      }}
+                      className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all duration-200 transform hover:scale-105 active:scale-95"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {categories.map((cat, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-1 text-xs bg-gray-300 dark:bg-gray-700 text-black dark:text-white rounded-full animate-in fade-in duration-200"
                       >
-                        <option value="">-- Select a NoteSpace --</option>
-                        {noteSpaces.map((space, idx) => (
-                          <option key={idx} value={space}>{space}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => {
-                          const newSpace = prompt("Enter new NoteSpace name:");
-                          if (newSpace && !noteSpaces.includes(newSpace)) {
-                            setNoteSpaces([...noteSpaces, newSpace]);
-                            setSelectedNoteSpace(newSpace);
-                          }
-                        }}
-                        className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                      >
-                        + Create
-                      </button>
-                    </div> */}
+                        {cat}
+                      </span>
+                    ))}
+                  </div>
+                </div>
 
-                    <label className="block text-sm mb-1 text-black dark:text-white">
-                      Tags
-                    </label>
-                    <div className="mt-2 flex flex-col gap-2">
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={newCategory}
-                          onChange={(e) => setNewCategory(e.target.value)}
-                          placeholder="Enter a tag..."
-                          className="flex-1 px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white"
-                        />
-                        <button
-                          onClick={() => {
-                            if (newCategory.trim()) {
-                              setCategories([...categories, newCategory.trim()]);
-                              setNewCategory("");
-                            }
-                          }}
-                          className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                        >
-                          Add
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {categories.map((cat, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2 py-1 text-xs bg-gray-300 dark:bg-gray-700 text-black dark:text-white rounded-full"
-                          >
-                            {cat}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+                {/* Favorite */}
+                <label className="block text-sm mt-3 mb-1 text-black dark:text-white cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200">
+                  <input
+                    type="checkbox"
+                    checked={favorite}
+                    onChange={(e) => setFavorite(e.target.checked)}
+                    className="mr-2"
+                  />
+                  Mark as Favorite
+                </label>
 
-                    {/* Favorite */}
-                    <label className="block text-sm mt-3 mb-1 text-black dark:text-white">
-                      <input
-                        type="checkbox"
-                        checked={favorite}
-                        onChange={(e) => setFavorite(e.target.checked)}
-                        className="mr-2"
-                      />
-                      Mark as Favorite
-                    </label>
+                <label className="block text-sm mt-2 mb-1 text-black dark:text-white cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200">
+                  <input
+                    type="checkbox"
+                    checked={readingLater}
+                    onChange={(e) => setReadingLater(e.target.checked)}
+                    className="mr-2"
+                  />
+                  Add to Reading Later
+                </label>
 
-                    <label className="block text-sm mt-2 mb-1 text-black dark:text-white">
-                      <input
-                        type="checkbox"
-                        checked={readingLater}
-                        onChange={(e) => setReadingLater(e.target.checked)}
-                        className="mr-2"
-                      />
-                      Add to Reading Later
-                    </label>
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={confirmSave}
+                    disabled={!title.trim()}
+                    className={`px-3 py-1 text-xs rounded-md text-white transition-all duration-200 transform ${
+                      !title.trim()
+                        ? "bg-gray-400 cursor-not-allowed"
+                        : "bg-green-600 hover:bg-green-700 hover:scale-105 active:scale-95"
+                    }`}
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setActivePanel(null)}
+                    className="px-3 py-1 text-xs bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-400 dark:hover:bg-gray-500 transition-all duration-200 transform hover:scale-105 active:scale-95"
+                  >
+                    Cancel
+                  </button>
+                </div>
 
-                    <div className="flex gap-2 mt-4">
-                      <button
-                        onClick={confirmSave}
-                        disabled={!title.trim()}
-                        className={`px-3 py-1 text-xs rounded-md text-white ${
-                          !title.trim()
-                            ? "bg-gray-400 cursor-not-allowed"
-                            : "bg-green-600 hover:bg-green-700"
-                        }`}
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setActivePanel(null)}
-                        className="px-3 py-1 text-xs bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-400 dark:hover:bg-gray-500"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                {showSavedMsg && (
+                  <div className="mt-2 text-green-600 dark:text-green-400 text-sm animate-in fade-in duration-300">
+                    ✅ Saved successfully!
+                  </div>
+                )}
+              </div>
+            )}
 
-                    {showSavedMsg && (
-                      <div className="mt-2 text-green-600 dark:text-green-400 text-sm">
-                        ✅ Saved successfully!
-                      </div>
-                    )}
+           {activePanel === "related" && (
+              <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 animate-in fade-in slide-in-from-top-2 duration-300">
+                <h3 className="font-semibold text-lg mb-2 text-black dark:text-white">🔗 Related Concept Network</h3>
+
+                {loadingRelated ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-300">⏳ Generating related concepts...</p>
+                ) : (
+                  <div className="text-sm text-black dark:text-white whitespace-pre-line leading-relaxed">
+                    {relatedConcepts || "No related concepts available."}
                   </div>
                 )}
 
-                {activePanel === "related" && (
-                  <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
-                    <h3 className="font-semibold text-lg mb-2 text-black dark:text-white">🔗 Related Concept Network</h3>
-
-                    {loadingRelated ? (
-                      <p className="text-sm text-gray-600 dark:text-gray-300">⏳ Generating related concepts...</p>
-                    ) : (
-                      <div className="text-sm text-black dark:text-white whitespace-pre-line leading-relaxed">
-                        {relatedConcepts || "No related concepts available."}
-                      </div>
-                    )}
-
-                    <div className="flex gap-2 mt-6 text-black dark:text-white">
-                      <button className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700">
-                        Explore More
-                      </button>
-                      <button className="px-3 py-1 text-xs bg-purple-600 text-white rounded-md hover:bg-purple-700">
-                        Add to Learning Path
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <div className="flex gap-2 mt-6 text-black dark:text-white">
+                  <button className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all duration-200 transform hover:scale-105 active:scale-95">
+                    Explore More
+                  </button>
+                  <button className="px-3 py-1 text-xs bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-all duration-200 transform hover:scale-105 active:scale-95">
+                    Add to Learning Path
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
