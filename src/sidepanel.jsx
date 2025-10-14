@@ -8,6 +8,7 @@ import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import './index.css';
+import DarkModeButton from './utils/darkModeBtn';
 
 const SidePanel = () => {
   const [activeTab, setActiveTab] = useState(localStorage.getItem("defaultActiveTab") || "summarize");
@@ -601,15 +602,13 @@ const SidePanel = () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab || !tab.url) return;
       const url = tab.url;
-      
-      console.log('🔍 Checking page context for:', url, 'Prioritize:', prioritize);
-      console.log('🔍 Current pageContext URL:', pageContextRef.current?.url);
 
-      // Always update current URL immediately
+      console.log('🔍 Checking page context for:', url, 'Prioritize:', prioritize);
+      console.log('🔍 Current pageContext URL:', pageContextRef.current.url || '(none)');
+
       setCurrentPageUrl(url);
 
-      // Check if we already have the correct page context loaded
-      if (pageContextRef.current?.url === url) {
+      if (pageContextRef.current.url === url) {
         setIsPageContextLoaded(true);
         setIsLoading(false);
         console.log('✅ Page context already loaded for current URL');
@@ -627,21 +626,16 @@ const SidePanel = () => {
       }
 
       const inQueue = processingQueueRef.current.some(item => item.url === url);
-      
+
       if (prioritize) {
         console.log('⚡ Prioritizing current page read:', url);
-        
-        // Clear all queued items and stop current processing
         setProcessingQueue([]);
         processingQueueRef.current = [];
-        
         currentLoadIdRef.current++;
-        
         await readPageForChat(url);
       } else if (!inQueue && url !== lastReadUrlRef.current) {
         console.log('📋 Adding to queue:', url);
         setProcessingQueue(prev => [...prev, { url, timestamp: Date.now() }]);
-        
         if (!isProcessingQueueRef.current) {
           processQueue();
         }
@@ -934,8 +928,10 @@ const SidePanel = () => {
         }
 
         const prompt = `
-          Based on the following summary, generate minimum 3, maximum 5 detailed Q&A pairs.
-          - Cover background, detailed reasoning, potential implications, and author's perspective.
+          Based on the following summary, generate at least 3 detailed Q&A pairs 
+          (recommended 5). 
+          If you naturally find more than 5 strong questions, you may include them all.
+          - Cover background, reasoning, implications, and author's perspective.
           - Keep answers concise but informative.
           Summary:
           "${summary}"
@@ -949,7 +945,28 @@ const SidePanel = () => {
 
         const session = await LanguageModel.create();
         const extraQA = await session.prompt(prompt);
-        summary = `**In-Depth Q&A Based on Summary:**\n${extraQA}`;
+
+        if (depth === 1) {
+          summary = `**In-Depth Q&A Based on Summary:**\n${extraQA}`;
+        } else {
+          const lastQMatch = result?.match(/Q(\d+):/g);
+          let lastQNum = 0;
+          if (lastQMatch) {
+            const numbers = lastQMatch.map(q => parseInt(q.match(/\d+/)[0]));
+            lastQNum = Math.max(...numbers);
+          }
+
+          let nextQNum = lastQNum;
+          summary = extraQA.replace(/Q(\d+):/g, () => {
+            nextQNum += 1;
+            return `Q${nextQNum}:`;
+          });
+
+          summary = summary
+            .replace(/In-Depth Q&A Based on Summary:.*?\n/g, '')
+            .replace(/Here are \d+ detailed Q&A pairs based on the provided summary:.*?\n/g, '')
+            .trim();
+        }
         session.destroy();
       }
 
@@ -2506,22 +2523,8 @@ const SidePanel = () => {
               </span>
             </div>
 
-            {/* Dark Mode Toggle */}
             <div className="flex justify-center gap-2">
-              <button
-                onClick={toggleDarkMode}
-                aria-label="Toggle dark mode"
-              >
-                {isDarkMode ? (
-                  <svg className="w-4 h-4 text-gray-700 hover:cursor-pointer hover:text-yellow-500 transition-all" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4 text-gray-300 dark:text-gray-700  hover:cursor-pointer hover:text-purple-600 transition-all" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                  </svg>
-                )}
-              </button>
+              <DarkModeButton />
               <button
                 onClick={openSave}
                 aria-label="Open save"
