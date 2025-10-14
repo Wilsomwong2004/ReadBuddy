@@ -39,7 +39,7 @@ const SidePanel = () => {
   const [isPageContextLoaded, setIsPageContextLoaded] = useState(false);
   const [currentPageUrl, setCurrentPageUrl] = useState('');
   const [lastReadUrl, setLastReadUrl] = useState('');
-  const [pageContext, setPageContext] = useState(null);
+  const [pageContext, setPageContext] = useState({ url: null, fullContent: null, metadata: null, summary: null, timestamp: null });
   const [pageHistory, setPageHistory] = useState([]); 
   const pageContextRef = useRef(null);
   const pageHistoryRef = useRef([]);
@@ -115,7 +115,11 @@ const SidePanel = () => {
   useEffect(() => { pageHistoryRef.current = pageHistory; }, [pageHistory]);
   useEffect(() => { lastReadUrlRef.current = lastReadUrl; }, [lastReadUrl]);
   useEffect(() => { processingQueueRef.current = processingQueue; }, [processingQueue]);
-  useEffect(() => { isProcessingQueueRef.current = isProcessingQueue; }, [isProcessingQueue]);
+  useEffect(() => {
+    if (!isProcessingQueueRef.current && processingQueueRef.current.length > 0) {
+      processQueue();
+    }
+  }, [currentPageUrl]);
 
 
   useEffect(() => {
@@ -457,25 +461,37 @@ const SidePanel = () => {
         if (results && results[0] && results[0].result) {
           const { content, metadata } = results[0].result;
           
+          const correctedMetadata = {
+            ...metadata,
+            url: url 
+          };
+          
+          console.log('📄 Extracted raw data:', {
+            contentLength: content?.length,
+            contentPreview: content?.substring(0, 200),
+            title: correctedMetadata?.title,
+            url: url
+          });
+
+          if (!content || content.trim().length < 50) {
+            console.error('❌ Extracted content is too short or empty');
+            return null;
+          }
+          
           sessionStorage.setItem(cacheKey, JSON.stringify({
             content,
-            metadata,
+            metadata: correctedMetadata,
             timestamp: Date.now()
           }));
 
-          if (!forChatOnly) {
-            setSelectedText(content);
-            setPageMetadata(metadata);
-          }
-          
-          console.log('📄 Extracted:', {
-            title: metadata.title,
+          console.log('✅ Successfully extracted:', {
+            title: correctedMetadata.title,
             length: content.length,
-            words: content.split(/\s+/).length
+            words: content.split(/\s+/).length,
+            url: url
           });
 
-          setIsLoading(false);
-          return { content, metadata };
+          return { content, metadata: correctedMetadata };
         }
       }
     } catch (error) {
@@ -604,11 +620,11 @@ const SidePanel = () => {
       const url = tab.url;
 
       console.log('🔍 Checking page context for:', url, 'Prioritize:', prioritize);
-      console.log('🔍 Current pageContext URL:', pageContextRef.current.url || '(none)');
+      console.log('🔍 Current pageContext URL:', pageContextRef.current?.url || '(none)');
 
       setCurrentPageUrl(url);
 
-      if (pageContextRef.current.url === url) {
+      if (pageContextRef.current?.url === url) {
         setIsPageContextLoaded(true);
         setIsLoading(false);
         console.log('✅ Page context already loaded for current URL');
@@ -646,46 +662,52 @@ const SidePanel = () => {
   };
 
   const processQueue = async () => {
-  if (isProcessingQueueRef.current) {
-    console.log('⏳ Queue processor already running');
-    return;
-  }
+    if (isProcessingQueueRef.current) {
+      console.log('⏳ Queue processor already running');
+      return;
+    }
 
-  console.log('🚀 Starting queue processor');
-  setIsProcessingQueue(true);
-  isProcessingQueueRef.current = true;
-  
-  while (processingQueueRef.current.length > 0) {
-    const nextItem = processingQueueRef.current[0];
-    console.log('🔄 Processing queue item:', nextItem.url);
-    console.log('📊 Remaining in queue:', processingQueueRef.current.length);
+    console.log('🚀 Starting queue processor');
+    setIsProcessingQueue(true);
+    isProcessingQueueRef.current = true;
     
-    const cached = findCachedPage(nextItem.url);
-    if (cached) {
-      console.log('✅ Already cached, skipping:', nextItem.url);
+    while (processingQueueRef.current.length > 0) {
+      const nextItem = processingQueueRef.current[0];
+      console.log('📄 Processing queue item:', nextItem.url);
+      console.log('📊 Remaining in queue:', processingQueueRef.current.length);
+      
+      const cached = findCachedPage(nextItem.url);
+      if (cached) {
+        console.log('✅ Already cached, skipping:', nextItem.url);
+        setProcessingQueue(prev => prev.slice(1));
+        continue;
+      }
+      
+      const isCurrentPage = nextItem.url === currentPageUrl;
+      
+      try {
+        console.log('⏳ Starting to read:', nextItem.url);
+        const result = await readPageForChat(nextItem.url);
+        
+        if (isCurrentPage && result) {
+          console.log('✅ Updated current page context:', nextItem.url);
+        }
+        
+        console.log('✅ Successfully read:', nextItem.url);
+      } catch (error) {
+        console.log('⚠️ Cannot read page, skipping:', nextItem.url, error.message);
+      }
+      
       setProcessingQueue(prev => prev.slice(1));
-      await new Promise(resolve => setTimeout(resolve, 50));
-      continue;
+      console.log('✅ Removed from queue:', nextItem.url);
+      
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
     
-    try {
-      console.log('⏳ Starting to read:', nextItem.url);
-      await readPageForChat(nextItem.url);
-      console.log('✅ Successfully read:', nextItem.url);
-    } catch (error) {
-      console.log('⚠️ Cannot read page, skipping:', nextItem.url, error.message);
-    }
-    
-    setProcessingQueue(prev => prev.slice(1));
-    console.log('✅ Removed from queue:', nextItem.url);
-    
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-  
-  isProcessingQueueRef.current = false;
-  setIsProcessingQueue(false);
-  console.log('✅ Queue processing complete - all items processed');
-};
+    isProcessingQueueRef.current = false;
+    setIsProcessingQueue(false);
+    console.log('✅ Queue processing complete - all items processed');
+  };
 
   // Drag and Drop handlers
   // const handleDragEnter = (e) => {
@@ -1121,7 +1143,6 @@ const SidePanel = () => {
 
     const askingAboutCurrentPage = /\b(this|current|the)\s+(page|article|webpage|site|content|document)\b/i.test(text);
     
-    // Add user message immediately
     const userMessage = { type: 'user', content: text, timestamp: Date.now() };
     setChatHistory(prev => [...prev, userMessage]);
     
@@ -1131,7 +1152,6 @@ const SidePanel = () => {
     console.log('🔍 User asking about current page:', askingAboutCurrentPage);
     
     try {
-      // Check if we need to load the current page context
       const pageContextMismatch = pageContext?.url !== currentPageUrl;
       const needsCurrentPageLoad = askingAboutCurrentPage && 
         (!pageContext || pageContextMismatch);
@@ -1143,7 +1163,6 @@ const SidePanel = () => {
           contextUrl: pageContext?.url
         });
         
-        // Show loading message immediately
         const readingMessage = { 
           type: 'bot', 
           content: '📖 Reading the current page... please wait', 
@@ -1152,10 +1171,8 @@ const SidePanel = () => {
         };
         setChatHistory(prev => [...prev, readingMessage]);
         
-        // Load the current page with priority
         await checkAndLoadPageContext(true);
         
-        // Remove loading message
         setChatHistory(prev => prev.filter(msg => msg.content !== '📖 Reading the current page... please wait'));
         
       } else if (!pageContext || !pageContext.summary) {
@@ -1167,9 +1184,8 @@ const SidePanel = () => {
 
       let prompt = text;
 
-      // Use the current page context ONLY if URL matches
       const currentContext = pageContextRef.current;
-      if (currentContext && currentContext.url === currentPageUrl && (currentContext.summary || currentContext.fullContent)) {
+      if (currentContext?.url && currentContext.url === currentPageUrl && (currentContext.summary || currentContext.fullContent)) {
         const contextToUse = currentContext.summary || currentContext.fullContent.substring(0, 3000);
         prompt = `Context: I'm reading a webpage titled "${currentContext.metadata?.title || 'Unknown'}" at ${currentContext.url}.
 
@@ -1288,7 +1304,6 @@ const SidePanel = () => {
         pageUrl = tab?.url;
         tabId = tab?.id;
       } else {
-        // If we have a forced URL, we need to get the tab ID for that URL
         if (typeof chrome !== 'undefined' && chrome.tabs) {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
           if (tab?.url === forcedUrl) {
@@ -1330,7 +1345,6 @@ const SidePanel = () => {
 
       console.log('🔄 No cache found, extracting fresh content...');
       
-      // Pass the specific URL to extractPageContent
       const extractedData = await extractPageContentForUrl(pageUrl, tabId);
       
       console.log('📄 Extraction completed:', {
@@ -1375,29 +1389,34 @@ const SidePanel = () => {
       };
 
       try {
-        console.log('📝 Starting summarization...');
-        const wordCount = content.split(/\s+/).length;
-        console.log('📊 Word count:', wordCount);
-        
-        if (wordCount > 2000) {
-          const chunks = chunkText(content, 4000);
-          console.log('✂️ Split into', chunks.length, 'chunks');
-          const summaries = [];
-          for (let i = 0; i < Math.min(chunks.length, 3); i++) {
-            console.log(`📝 Summarizing chunk ${i + 1}...`);
-            const summary = await summarizeText(chunks[i]);
-            summaries.push(summary.replace(/\*\*Summary.*?\*\*\n\n/g, '').trim());
+        console.log('🔍 Starting summarization...');
+          const wordCount = content.split(/\s+/).length;
+          console.log('📊 Word count:', wordCount);
+          
+          if (apiSupport.summarizer && wordCount > 2000) {
+            const chunks = chunkText(content, 4000);
+            console.log('✂️ Split into', chunks.length, 'chunks');
+            const summaries = [];
+            for (let i = 0; i < Math.min(chunks.length, 3); i++) {
+              console.log(`🔍 Summarizing chunk ${i + 1}...`);
+              try {
+                const summary = await summarizeText(chunks[i]);
+                summaries.push(summary.replace(/\*\*Summary.*?\*\*\n\n/g, '').trim());
+              } catch (chunkErr) {
+                console.warn('⚠️ Failed to summarize chunk, using excerpt:', chunkErr);
+                summaries.push(chunks[i].substring(0, 500) + '...');
+              }
+            }
+            newPageContext.summary = summaries.join('\n\n');
+            console.log('✅ Summary created:', newPageContext.summary.substring(0, 200));
+          } else {
+            console.log('🔍 Using content excerpt as summary (API not available or short text)');
+            newPageContext.summary = content.length > 3000 ? content.substring(0, 3000) + '...' : content;
           }
-          newPageContext.summary = summaries.join('\n\n');
-          console.log('✅ Summary created:', newPageContext.summary.substring(0, 200));
-        } else {
-          console.log('📝 Using full content as summary (short text)');
-          newPageContext.summary = content;
+        } catch (sErr) {
+          console.error('⚠️ Summarize failed:', sErr);
+          newPageContext.summary = content.substring(0, 3000);
         }
-      } catch (sErr) {
-        console.error('⚠️ Summarize failed:', sErr);
-        newPageContext.summary = content.substring(0, 3000);
-      }
 
       console.log('💾 Saving page context:', {
         url: newPageContext.url,
@@ -1544,9 +1563,10 @@ const SidePanel = () => {
 
   const getCurrentContextForQuestion = () => {
     const ctx = pageContextRef.current;
-    if (!ctx) {
+    if (!ctx || !ctx.url) {
       return { hasContext: false };
     }
+
     return {
       hasContext: true,
       contextLength: ctx.summary ? ctx.summary.length : (ctx.fullContent ? Math.min(3000, ctx.fullContent.length) : 0),
