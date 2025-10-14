@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
 import { BookOpen, Clock, Star, Settings, Menu, X, Bookmark, Save, RotateCcw, Download, BookText, Bug, Lightbulb, Shield } from 'lucide-react';
+import InterfaceThemeSelect from './utils/darkSelect';
 
 const ReadBuddySettings = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -46,6 +47,12 @@ const ReadBuddySettings = () => {
       ...prev,
       theme: savedTheme
     }));
+  }, []);
+
+  useEffect(() => {
+    loadDarkMode((isDark) => {
+      handleSettingChange('theme', isDark ? "true" : "false");
+    });
   }, []);
 
   useEffect(() => {
@@ -413,16 +420,7 @@ const ReadBuddySettings = () => {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Interface theme</label>
-                        <select
-                          value={settings.theme}
-                          onChange={(e) => handleSettingChange('theme', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        >
-                          <option value="false">Light</option>
-                          <option value="true">Dark</option>
-                          {/* <option value="auto">Auto</option> */}
-                        </select>
+                        <InterfaceThemeSelect handleSettingChange={handleSettingChange} />
                       </div>
                     </div>
                   </div>
