@@ -53,6 +53,7 @@ const SidePanel = () => {
   const MAX_PAGE_HISTORY = 20;
   const [chunkingDepth, setChunkingDepth] = useState({ current: 0, total: 0, level: 1 });
   const [userCancelledProcessing, setUserCancelledProcessing] = useState(false);
+  const abortControllerRef = useRef(null);
 
   const[favorite, setFavorite] = useState(false);
   const [readingLater, setReadingLater] = useState(false);
@@ -637,25 +638,69 @@ const SidePanel = () => {
         return;
       }
 
-      const inQueue = processingQueueRef.current.some(item => item.url === url);
-
       if (prioritize) {
-        console.log('⚡ Prioritizing current page read:', url);
-        setProcessingQueue([]);
-        processingQueueRef.current = [];
-        currentLoadIdRef.current++;
-        setIsLoading(true);
-        await readPageForChat(url);
-        setIsLoading(false);
-      } else if (!inQueue && url !== lastReadUrlRef.current) {
-        console.log('📋 Adding to queue (background):', url);
-        const newQueue = [...processingQueueRef.current, { url, timestamp: Date.now() }];
+        console.log('⚡ PRIORITY REQUEST - Interrupting queue for:', url);
+        
+        // Cancel any ongoing processing
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          console.log('🛑 Aborted previous processing');
+        }
+        
+        // Create new abort controller
+        abortControllerRef.current = new AbortController();
+        
+        // Stop queue processor
+        isProcessingQueueRef.current = false;
+        setIsProcessingQueue(false);
+        
+        // Remove this URL from queue if it exists
+        const filteredQueue = processingQueueRef.current.filter(item => item.url !== url);
+        
+        // Set queue with current URL at front, followed by rest
+        const newQueue = [
+          { url, timestamp: Date.now(), priority: true },
+          ...filteredQueue
+        ];
+        
         setProcessingQueue(newQueue);
         processingQueueRef.current = newQueue;
         
-        // Trigger queue processing only if not already processing
-        if (!isProcessingQueueRef.current) {
-          setTimeout(() => processQueue(), 100);
+        currentLoadIdRef.current++;
+        setIsLoading(true);
+        
+        try {
+          await readPageForChat(url, abortControllerRef.current.signal);
+          setIsLoading(false);
+          
+          // Remove processed URL from queue
+          const updatedQueue = processingQueueRef.current.filter(item => item.url !== url);
+          setProcessingQueue(updatedQueue);
+          processingQueueRef.current = updatedQueue;
+          
+          // Resume queue processing if there are remaining items
+          if (updatedQueue.length > 0 && !isProcessingQueueRef.current) {
+            setTimeout(() => processQueue(), 100);
+          }
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            console.log('⚠️ Priority processing was aborted');
+          }
+          setIsLoading(false);
+        }
+        
+      } else {
+        const inQueue = processingQueueRef.current.some(item => item.url === url);
+        
+        if (!inQueue && url !== lastReadUrlRef.current) {
+          console.log('📋 Adding to queue (background):', url);
+          const newQueue = [...processingQueueRef.current, { url, timestamp: Date.now() }];
+          setProcessingQueue(newQueue);
+          processingQueueRef.current = newQueue;
+          
+          if (!isProcessingQueueRef.current) {
+            setTimeout(() => processQueue(), 100);
+          }
         }
       }
     } catch (err) {
@@ -668,7 +713,7 @@ const SidePanel = () => {
       console.log('⏳ Queue processor already running');
       return;
     }
-
+    
     if (processingQueueRef.current.length === 0) {
       console.log('📭 Queue is empty, nothing to process');
       return;
@@ -679,6 +724,12 @@ const SidePanel = () => {
     isProcessingQueueRef.current = true;
     
     while (processingQueueRef.current.length > 0) {
+      // Check if we should stop (interrupted by priority request)
+      if (!isProcessingQueueRef.current) {
+        console.log('🛑 Queue processing interrupted');
+        break;
+      }
+      
       const nextItem = processingQueueRef.current[0];
       console.log('📄 Processing queue item:', nextItem.url);
       console.log('📊 Remaining in queue:', processingQueueRef.current.length);
@@ -694,7 +745,12 @@ const SidePanel = () => {
       
       try {
         console.log('⏳ Starting to read:', nextItem.url);
-        const result = await readPageForChat(nextItem.url);
+        
+        // Create abort controller for this item
+        const itemAbortController = new AbortController();
+        abortControllerRef.current = itemAbortController;
+        
+        const result = await readPageForChat(nextItem.url, itemAbortController.signal);
         
         if (isCurrentPage && result) {
           console.log('✅ Updated current page context:', nextItem.url);
@@ -702,6 +758,11 @@ const SidePanel = () => {
         
         console.log('✅ Successfully read:', nextItem.url);
       } catch (error) {
+        if (error.name === 'AbortError') {
+          console.log('🛑 Queue item processing was aborted:', nextItem.url);
+          // Don't remove from queue, let priority handler manage it
+          break;
+        }
         console.log('⚠️ Cannot read page, skipping:', nextItem.url, error.message);
       }
       
@@ -713,7 +774,7 @@ const SidePanel = () => {
     
     isProcessingQueueRef.current = false;
     setIsProcessingQueue(false);
-    console.log('✅ Queue processing complete - all items processed');
+    console.log('✅ Queue processing complete');
   };
 
   // Drag and Drop handlers
@@ -1293,11 +1354,15 @@ const SidePanel = () => {
     setCurrentMessage('');
   };
 
-  const readPageForChat = async (forcedUrl = null) => {
+  const readPageForChat = async (forcedUrl = null, abortSignal = null) => {
     const myLoadId = ++currentLoadIdRef.current;
     const isBackgroundLoad = forcedUrl !== null && forcedUrl !== currentPageUrl;
 
     try {
+      if (abortSignal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       if (!isBackgroundLoad) {
         setIsLoading(true);
       }
@@ -1329,6 +1394,10 @@ const SidePanel = () => {
         return null;
       }
 
+      if (abortSignal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       console.log('📖 readPageForChat START for', pageUrl, 'loadId', myLoadId, 'tabId', tabId);
 
       setLastReadUrl(pageUrl);
@@ -1354,9 +1423,17 @@ const SidePanel = () => {
         return cachedNow;
       }
 
+      if (abortSignal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       console.log('🔄 No cache found, extracting fresh content...');
       
       const extractedData = await extractPageContentForUrl(pageUrl, tabId);
+
+      if (abortSignal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
       
       console.log('📄 Extraction completed:', {
         hasData: !!extractedData,
@@ -1399,6 +1476,10 @@ const SidePanel = () => {
         summary: null,
       };
 
+      if (abortSignal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       try {
         console.log('🔍 Starting summarization...');
           const wordCount = content.split(/\s+/).length;
@@ -1409,6 +1490,9 @@ const SidePanel = () => {
             console.log('✂️ Split into', chunks.length, 'chunks');
             const summaries = [];
             for (let i = 0; i < Math.min(chunks.length, 3); i++) {
+              if (abortSignal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+              }
               console.log(`🔍 Summarizing chunk ${i + 1}...`);
               try {
                 const summary = await summarizeText(chunks[i]);
@@ -1468,6 +1552,10 @@ const SidePanel = () => {
         }
         return newPageContext;
       } else {
+        if (error.name === 'AbortError') {
+          console.log('🛑 readPageForChat was aborted for', forcedUrl);
+          throw error;
+        }
         console.log('⚠️ Aborting write because loadId advanced', myLoadId);
         return null;
       }
@@ -1971,7 +2059,7 @@ const SidePanel = () => {
       
       case 'chat':
         return (
-          <div className="flex flex-col h-[670px] overflow-y-hidden space-y-4">
+          <div className="flex flex-col h-[740px] overflow-y-hidden space-y-4 pb-0">
             <div className="flex items-center justify-between rounded-lg">
               <h3 className="font-medium text-gray-900 dark:text-white flex items-center space-x-2">
                 <span>Readbuddy AI Assistant</span>
@@ -2009,12 +2097,12 @@ const SidePanel = () => {
                   </p>
                   {isPageContextLoaded && (
                     <p className="text-xs mt-2 text-green-600 dark:text-green-400">
-                      ✅ Page context loaded - Ask questions about the current page!
+                      ✅ Ask questions about the current page!
                     </p>
                   )}
                   {!isPageContextLoaded && !isLoading && (
                     <p className="text-xs mt-2 text-yellow-600 dark:text-yellow-400">
-                      ⚠️ Could not read this page - but you can still chat normally!
+                      ⚠️ Waiting for read the page but still can chat.
                     </p>
                   )}
                 </div>
@@ -2150,13 +2238,13 @@ const SidePanel = () => {
                     }}
                     placeholder="Type your message... (Press Enter to send)"
                     className="w-full p-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-200"
-                    rows="2"
+                    rows="3"
                     disabled={!apiSupport.chatbot || isStreaming}
                   />
                   <button
                     onClick={handleChatSend}
                     disabled={!currentMessage.trim() || !apiSupport.chatbot || isStreaming}
-                    className="absolute right-2 bottom-2 p-1.5 bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="absolute right-2 bottom-3 p-1.5 bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     <svg
                       className="w-4 h-4"
@@ -2184,7 +2272,11 @@ const SidePanel = () => {
   };
 
   return (
-    <div className="w-full min-h-screen overflow-hidden bg-white dark:bg-gray-900 flex flex-col relative pb-20">
+    <div
+      className={`w-full min-h-full overflow-hidden bg-white dark:bg-gray-900 flex flex-col relative ${
+        activeTab === 'chat' ? '' : 'pb-15'
+      }`}
+    >
       {/* {isDragging && (
         <div className="absolute inset-0 z-50 bg-blue-50 dark:bg-blue-900 bg-opacity-95 flex items-center justify-center animate-in fade-in duration-200">
           <div className="border-4 border-dashed border-blue-400 rounded-2xl p-12 bg-white dark:bg-gray-800 shadow-lg animate-pulse">
