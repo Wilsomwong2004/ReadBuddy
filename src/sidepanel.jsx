@@ -115,12 +115,6 @@ const SidePanel = () => {
   useEffect(() => { pageHistoryRef.current = pageHistory; }, [pageHistory]);
   useEffect(() => { lastReadUrlRef.current = lastReadUrl; }, [lastReadUrl]);
   useEffect(() => { processingQueueRef.current = processingQueue; }, [processingQueue]);
-  useEffect(() => {
-    if (!isProcessingQueueRef.current && processingQueueRef.current.length > 0) {
-      processQueue();
-    }
-  }, [currentPageUrl]);
-
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -233,7 +227,23 @@ const SidePanel = () => {
   // };
 
   const handleExtractPageContent = async () => {
-    await extractPageContent(false);
+    try {
+      setIsLoading(true);
+      
+      const cached = findCachedPage(currentPageUrl);
+      if (cached && cached.fullContent) {
+        console.log('✅ Loading content from page history cache');
+        setSelectedText(cached.fullContent);
+        setPageMetadata(cached.metadata);
+        setIsLoading(false);
+        return;
+      }
+      
+      await extractPageContent(false);
+    } catch (error) {
+      console.error('❌ Error in handleExtractPageContent:', error);
+      setIsLoading(false);
+    }
   };
 
   const findCachedPage = (url) => {
@@ -427,10 +437,6 @@ const SidePanel = () => {
     try {
       setIsLoading(true);
 
-      // if (!forChatOnly) {
-      //   setResult('');
-      // }
-
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         
@@ -445,7 +451,6 @@ const SidePanel = () => {
             if (!forChatOnly) {
               setSelectedText(content);
               setPageMetadata(metadata);
-              // setResult('✅ Page content loaded from cache');
             }
             
             setIsLoading(false);
@@ -461,37 +466,25 @@ const SidePanel = () => {
         if (results && results[0] && results[0].result) {
           const { content, metadata } = results[0].result;
           
-          const correctedMetadata = {
-            ...metadata,
-            url: url 
-          };
-          
-          console.log('📄 Extracted raw data:', {
-            contentLength: content?.length,
-            contentPreview: content?.substring(0, 200),
-            title: correctedMetadata?.title,
-            url: url
-          });
-
-          if (!content || content.trim().length < 50) {
-            console.error('❌ Extracted content is too short or empty');
-            return null;
-          }
-          
           sessionStorage.setItem(cacheKey, JSON.stringify({
             content,
-            metadata: correctedMetadata,
+            metadata,
             timestamp: Date.now()
           }));
 
-          console.log('✅ Successfully extracted:', {
-            title: correctedMetadata.title,
+          if (!forChatOnly) {
+            setSelectedText(content);
+            setPageMetadata(metadata);
+          }
+          
+          console.log('📄 Extracted:', {
+            title: metadata.title,
             length: content.length,
-            words: content.split(/\s+/).length,
-            url: url
+            words: content.split(/\s+/).length
           });
 
-          return { content, metadata: correctedMetadata };
+          setIsLoading(false);
+          return { content, metadata };
         }
       }
     } catch (error) {
@@ -620,13 +613,14 @@ const SidePanel = () => {
       const url = tab.url;
 
       console.log('🔍 Checking page context for:', url, 'Prioritize:', prioritize);
-      console.log('🔍 Current pageContext URL:', pageContextRef.current?.url || '(none)');
 
       setCurrentPageUrl(url);
 
       if (pageContextRef.current?.url === url) {
         setIsPageContextLoaded(true);
-        setIsLoading(false);
+        if (prioritize) {
+          setIsLoading(false);
+        }
         console.log('✅ Page context already loaded for current URL');
         return;
       }
@@ -636,7 +630,9 @@ const SidePanel = () => {
         setPageContext(cachedPage);
         pageContextRef.current = cachedPage;
         setIsPageContextLoaded(true);
-        setIsLoading(false);
+        if (prioritize) {
+          setIsLoading(false);
+        }
         console.log('✅ Using cached content for', url);
         return;
       }
@@ -648,12 +644,18 @@ const SidePanel = () => {
         setProcessingQueue([]);
         processingQueueRef.current = [];
         currentLoadIdRef.current++;
+        setIsLoading(true);
         await readPageForChat(url);
+        setIsLoading(false);
       } else if (!inQueue && url !== lastReadUrlRef.current) {
-        console.log('📋 Adding to queue:', url);
-        setProcessingQueue(prev => [...prev, { url, timestamp: Date.now() }]);
+        console.log('📋 Adding to queue (background):', url);
+        const newQueue = [...processingQueueRef.current, { url, timestamp: Date.now() }];
+        setProcessingQueue(newQueue);
+        processingQueueRef.current = newQueue;
+        
+        // Trigger queue processing only if not already processing
         if (!isProcessingQueueRef.current) {
-          processQueue();
+          setTimeout(() => processQueue(), 100);
         }
       }
     } catch (err) {
@@ -664,6 +666,11 @@ const SidePanel = () => {
   const processQueue = async () => {
     if (isProcessingQueueRef.current) {
       console.log('⏳ Queue processor already running');
+      return;
+    }
+
+    if (processingQueueRef.current.length === 0) {
+      console.log('📭 Queue is empty, nothing to process');
       return;
     }
 
@@ -1288,8 +1295,12 @@ const SidePanel = () => {
 
   const readPageForChat = async (forcedUrl = null) => {
     const myLoadId = ++currentLoadIdRef.current;
+    const isBackgroundLoad = forcedUrl !== null && forcedUrl !== currentPageUrl;
+
     try {
-      setIsLoading(true);
+      if (!isBackgroundLoad) {
+        setIsLoading(true);
+      }
       setIsPageContextLoaded(false);
 
       let pageUrl = forcedUrl;
@@ -1451,7 +1462,10 @@ const SidePanel = () => {
           loadId: myLoadId,
           historySize: pageHistoryRef.current.length 
         });
-        setIsLoading(false);
+        
+        if (!isBackgroundLoad) {
+          setIsLoading(false);
+        }
         return newPageContext;
       } else {
         console.log('⚠️ Aborting write because loadId advanced', myLoadId);
@@ -1459,7 +1473,7 @@ const SidePanel = () => {
       }
     } catch (error) {
       console.error('❌ Failed to read page:', error);
-      if (currentLoadIdRef.current === myLoadId) {
+      if (currentLoadIdRef.current === myLoadId && !isBackgroundLoad) {
         setIsLoading(false);
         setIsPageContextLoaded(false);
       }
@@ -1470,7 +1484,6 @@ const SidePanel = () => {
   const extractPageContentForUrl = async (url, tabId = null) => {
     try {
       if (typeof chrome !== 'undefined' && chrome.tabs) {
-        // If we don't have a tabId, get the active tab
         let targetTabId = tabId;
         let currentTab = null;
         
@@ -1479,18 +1492,20 @@ const SidePanel = () => {
           currentTab = tab;
           targetTabId = tab?.id;
           
-          // Verify the URL matches
+          if (!url) {
+            url = tab?.url;
+          }
+          
           if (tab?.url !== url) {
             console.warn('⚠️ Current tab URL does not match requested URL', {
               tabUrl: tab?.url,
               requestedUrl: url
             });
-            // Still try to extract if we have a tab ID
           }
         }
         
-        if (!targetTabId) {
-          console.error('❌ No valid tab ID found');
+        if (!targetTabId || !url) {
+          console.error('❌ No valid tab ID or URL found');
           return null;
         }
 
