@@ -45,6 +45,7 @@ const SidePanel = () => {
   const pageHistoryRef = useRef([]);
   const lastReadUrlRef = useRef('');
   const currentLoadIdRef = useRef(0);
+  const [isTooltipTriggered, setIsTooltipTriggered] = useState(false);
 
   const [processingQueue, setProcessingQueue] = useState([]);
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
@@ -119,7 +120,8 @@ const SidePanel = () => {
 
   useEffect(() => {
     if (activeTab === 'chat') {
-      // setSelectedText('');
+      setResult('');
+    } else {
       setResult('');
     }
 
@@ -179,6 +181,8 @@ const SidePanel = () => {
           const text = message.text;
           console.log('[Sidebar] Setting selected text:', text.substring(0, 50) + '...');
           setSelectedText(message.text);
+          setIsTooltipTriggered(true);
+          console.log("Tooltip triggered:", setIsTooltipTriggered);
           
           if (message.action !== 'chat') {
             console.log('[Sidebar] Auto-processing text for action:', message.action);
@@ -230,6 +234,7 @@ const SidePanel = () => {
   const handleExtractPageContent = async () => {
     try {
       setIsLoading(true);
+      setResult(''); 
       
       const cached = findCachedPage(currentPageUrl);
       if (cached && cached.fullContent) {
@@ -241,6 +246,7 @@ const SidePanel = () => {
       }
       
       await extractPageContent(false);
+      setIsTooltipTriggered(false);
     } catch (error) {
       console.error('❌ Error in handleExtractPageContent:', error);
       setIsLoading(false);
@@ -322,6 +328,12 @@ const SidePanel = () => {
       endOfMessagesRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatHistory, isStreaming]);
+
+  useEffect(() => {
+    if (activeTab === 'chat' && endOfMessagesRef.current) {
+      endOfMessagesRef.current.scrollIntoView({ behavior: 'auto' });
+    }
+  }, [activeTab]);
 
   const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_APIKEY,
@@ -617,6 +629,10 @@ const SidePanel = () => {
 
       setCurrentPageUrl(url);
 
+      if (prioritize) {
+        setIsLoading(true);
+      }
+
       if (pageContextRef.current?.url === url) {
         setIsPageContextLoaded(true);
         if (prioritize) {
@@ -641,23 +657,18 @@ const SidePanel = () => {
       if (prioritize) {
         console.log('⚡ PRIORITY REQUEST - Interrupting queue for:', url);
         
-        // Cancel any ongoing processing
         if (abortControllerRef.current) {
           abortControllerRef.current.abort();
           console.log('🛑 Aborted previous processing');
         }
         
-        // Create new abort controller
         abortControllerRef.current = new AbortController();
         
-        // Stop queue processor
         isProcessingQueueRef.current = false;
         setIsProcessingQueue(false);
         
-        // Remove this URL from queue if it exists
         const filteredQueue = processingQueueRef.current.filter(item => item.url !== url);
         
-        // Set queue with current URL at front, followed by rest
         const newQueue = [
           { url, timestamp: Date.now(), priority: true },
           ...filteredQueue
@@ -667,7 +678,9 @@ const SidePanel = () => {
         processingQueueRef.current = newQueue;
         
         currentLoadIdRef.current++;
-        setIsLoading(true);
+        if (activeTab === 'chat') {
+          setIsLoading(true);
+        }
         
         try {
           await readPageForChat(url, abortControllerRef.current.signal);
@@ -1838,9 +1851,16 @@ const SidePanel = () => {
       return;
     }
 
+    if (!isTooltipTriggered && !isLoading) {
+      console.log('❌ Auto-processing blocked - not from tooltip');
+      return;
+    }
+
+    setUserCancelledProcessing(false);
+    userCancelledRef.current = false;
     setIsLoading(true);
     setResult('');
-    setUserCancelledProcessing(false);
+    setIsTooltipTriggered(false);
     
     try {
       let processedResult = '';
@@ -2059,7 +2079,7 @@ const SidePanel = () => {
       
       case 'chat':
         return (
-          <div className="flex flex-col h-[740px] overflow-y-hidden space-y-4 pb-0">
+          <div className="flex flex-col h-[680px] overflow-y-hidden space-y-4 pb-0">
             <div className="flex items-center justify-between rounded-lg">
               <h3 className="font-medium text-gray-900 dark:text-white flex items-center space-x-2">
                 <span>Readbuddy AI Assistant</span>
