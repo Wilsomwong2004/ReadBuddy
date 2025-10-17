@@ -82,6 +82,8 @@ const SidePanel = () => {
   let noteSpaces = []; 
   let isExtractButtonClicked = false;
   let pdfJsReadyPromise = null;
+  const userCancelledRef = useRef(false);
+  const isManualClick = useState(false);
 
   useEffect(() => {
     checkAPISupport();
@@ -404,14 +406,14 @@ const SidePanel = () => {
               
               if (isReady) {
                 clearInterval(waitForAPI);
-                processText(message.action, message.text);
+                processText(message.action, message.text, {});
               }
             }, 100);
             
             setTimeout(() => {
               clearInterval(waitForAPI);
               console.log('[Sidebar] API check timeout - processing anyway');
-              processText(message.action, message.text);
+              processText(message.action, message.text, {});
             }, 5000);
           } else {
             console.log('[Sidebar] Chat action - setting current message');
@@ -2377,10 +2379,10 @@ const SidePanel = () => {
       return;
     }
 
-    if (!isTooltipTriggered && !isLoading) {
+    if (!isManualClick && !isTooltipTriggered && !isLoading) {
       console.log('❌ Auto-processing blocked - not from tooltip');
       return;
-    }
+  }
 
     setUserCancelledProcessing(false);
     userCancelledRef.current = false;
@@ -2918,7 +2920,7 @@ const SidePanel = () => {
         {/* Action Button */}
         {activeTab !== 'chat' && (
           <button
-            onClick={() => processText(activeTab, selectedText)}
+            onClick={() => processText(activeTab, selectedText, { isManualClick: true })}
             disabled={isLoading || !selectedText.trim()}
             className={`w-full mt-4 py-3 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none ${
               activeTab === 'summarize' ? 'bg-blue-500 hover:bg-blue-600' :
