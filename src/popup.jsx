@@ -14,10 +14,10 @@ const Popup = () => {
   const [isDarkMode, setIsDarkMode] = useState("");
   const [os, setOS] = useState("Unknown OS");
   const [shortcuts, setShortcuts] = useState({
-    summarize: "",
-    translate: "",
-    explain: "",
-    chat: "",
+    summarize: "Alt+Shift+S",
+    translate: "Alt+Shift+T",
+    explain: "Alt+Shift+E",
+    chat: "Alt+Shift+C",
   });
 
   useEffect(() => {
@@ -257,7 +257,11 @@ const Popup = () => {
                 <span className="font-medium text-gray-900 dark:text-gray-100">{action.title}</span>
               </div>
               <div className="flex items-center space-x-2">
-                <span className="text-xs text-gray-400 dark:text-gray-300 font-mono">{formatShortcut(shortcuts[action.id])}</span>
+                {shortcuts[action.id] && (
+                  <span className="text-xs text-gray-400 dark:text-gray-300 font-mono">
+                    {formatShortcut(shortcuts[action.id])}
+                  </span>
+                )}
                 <svg className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-gray-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
