@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
+import copy from 'rollup-plugin-copy'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -15,7 +16,7 @@ export default defineConfig({
         notes: resolve(__dirname, 'notes.html'),
         content: resolve(__dirname, 'src/content.js'),
         background: resolve(__dirname, 'src/background.js'),
-        readability: resolve(__dirname, 'src/readability.js')
+        readability: resolve(__dirname, 'src/readability.js'),
       },
       output: {
         entryFileNames: '[name].js',
@@ -25,5 +26,14 @@ export default defineConfig({
     },
     outDir: "dist",
   },
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    copy({
+      targets: [
+        { src: 'src/lib', dest: 'dist' },
+      ],
+      hook: 'writeBundle',
+    }),
+  ],
 });

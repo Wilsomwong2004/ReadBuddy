@@ -26,14 +26,15 @@
   ],
   "host_permissions": [
     "http://*/*", 
-    "https://*/*"
+    "https://*/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "web_accessible_resources": [
     {
-      "resources": ["settings.html"],
+      "resources": ["lib/*.mjs", "settings.html"],
       "matches": ["<all_urls>"]
     }
   ],

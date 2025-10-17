@@ -35,6 +35,8 @@ const SidePanel = () => {
   const [showSavedMsg, setShowSavedMsg] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const [pageMetadata, setPageMetadata] = useState([]);
+  const [pdfJsReady, setPdfJsReady] = useState(false);
+  const pdfLibRef = useRef(null);
 
   const [isPageContextLoaded, setIsPageContextLoaded] = useState(false);
   const [currentPageUrl, setCurrentPageUrl] = useState('');
@@ -64,6 +66,11 @@ const SidePanel = () => {
   const [selectedNoteSpace, setSelectedNoteSpace] = useState(null);
   const [savedData, setSavedData] = useState(null);
 
+  const PDF_URLS = {
+    pdf: chrome.runtime.getURL('lib/pdf.mjs'),
+    worker: chrome.runtime.getURL('lib/pdf.worker.mjs')
+  };
+
   const [apiSupport, setApiSupport] = useState({
     summarizer: false,
     translator: false,
@@ -74,6 +81,7 @@ const SidePanel = () => {
 
   let noteSpaces = []; 
   let isExtractButtonClicked = false;
+  let pdfJsReadyPromise = null;
 
   useEffect(() => {
     checkAPISupport();
@@ -88,6 +96,46 @@ const SidePanel = () => {
     };
     
     initializePageRead();
+  }, []);
+
+  useEffect(() => {
+    const initPDFJS = async () => {
+      try {
+        if (typeof window.pdfjsLib === 'undefined') {
+          console.log('📚 Loading PDF.js...');
+          
+          const pdfjsModule = await import(chrome.runtime.getURL('lib/pdf.mjs'));
+          window.pdfjsLib = pdfjsModule;
+          
+          if (window.pdfjsLib.GlobalWorkerOptions) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+              chrome.runtime.getURL('lib/pdf.worker.mjs');
+          }
+          
+          setPdfJsReady(true);
+          console.log('✅ PDF.js loaded successfully');
+        } else {
+          setPdfJsReady(true);
+          console.log('✅ PDF.js already loaded');
+        }
+      } catch (error) {
+        console.error('❌ Failed to load PDF.js:', error);
+        const script = document.createElement('script');
+        script.type = 'module';
+        script.src = chrome.runtime.getURL('lib/pdf.mjs');
+        script.onload = () => {
+          if (window.pdfjsLib) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+              chrome.runtime.getURL('lib/pdf.worker.mjs');
+            setPdfJsReady(true);
+            console.log('✅ PDF.js loaded via fallback');
+          }
+        };
+        document.head.appendChild(script);
+      }
+    };
+    
+    initPDFJS();
   }, []);
 
   useEffect(() => { 
@@ -106,6 +154,34 @@ const SidePanel = () => {
       console.log('==================================');
     };
   }, []);
+
+  useEffect(() => {
+    window.debugPDFJS = () => {
+      console.log('=== PDF.js Debug Info ===');
+      console.log('Ready:', pdfJsReady);
+      console.log('Ref:', pdfLibRef.current ? 'Loaded' : 'Not loaded');
+      console.log('Window:', window.pdfjsLib ? 'Available' : 'Not available');
+      console.log('URLs:', {
+        pdf: chrome.runtime.getURL('lib/pdf.mjs'),
+        worker: chrome.runtime.getURL('lib/pdf.worker.mjs')
+      });
+      console.log('========================');
+      
+      return {
+        ready: pdfJsReady,
+        lib: pdfLibRef.current || window.pdfjsLib,
+        urls: {
+          pdf: chrome.runtime.getURL('lib/pdf.mjs'),
+          worker: chrome.runtime.getURL('lib/pdf.worker.mjs')
+        }
+      };
+    };
+    
+    if (pdfJsReady) {
+      console.log('✅ PDF.js is ready for use');
+    }
+  }, [pdfJsReady]);
+
 
   // useEffect(() => {
   //   if (activeTab === 'chat' && !isPageContextLoaded) {
@@ -160,6 +236,139 @@ const SidePanel = () => {
     loadDarkMode((isDark) => {
       setIsDarkMode(isDark);
     });
+  }, []);
+
+  useEffect(() => {
+    const loadPDFJS = async () => {
+      try {
+        console.log('📚 Loading PDF.js from local files...');
+        
+        try {
+          const pdfUrl = chrome.runtime.getURL('lib/pdf.mjs');
+          const workerUrl = chrome.runtime.getURL('lib/pdf.worker.mjs');
+          
+          console.log('📦 PDF.js URL:', pdfUrl);
+          console.log('📦 Worker URL:', workerUrl);
+          
+          const pdfjsLib = await import(pdfUrl);
+          
+          if (pdfjsLib.GlobalWorkerOptions) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+          }
+          
+          pdfLibRef.current = pdfjsLib;
+          window.pdfjsLib = pdfjsLib;
+          
+          setPdfJsReady(true);
+          console.log('✅ PDF.js loaded via dynamic import');
+          return;
+          
+        } catch (importError) {
+          console.warn('⚠️ Dynamic import failed, trying script injection:', importError);
+        }
+        
+        const script = document.createElement('script');
+        script.type = 'module';
+        
+        const pdfUrl = chrome.runtime.getURL('lib/pdf.mjs');
+        const workerUrl = chrome.runtime.getURL('lib/pdf.worker.mjs');
+        
+        script.textContent = `
+          (async () => {
+            try {
+              const pdfjsModule = await import('${pdfUrl}');
+              
+              // Set worker
+              if (pdfjsModule.GlobalWorkerOptions) {
+                pdfjsModule.GlobalWorkerOptions.workerSrc = '${workerUrl}';
+              }
+              
+              // Make globally available
+              window.pdfjsLib = pdfjsModule;
+              
+              // Notify that it's loaded
+              window.dispatchEvent(new CustomEvent('pdfjsready', { 
+                detail: pdfjsModule 
+              }));
+              
+              console.log('✅ PDF.js loaded and ready');
+            } catch (err) {
+              console.error('❌ Failed to load PDF.js:', err);
+              window.dispatchEvent(new CustomEvent('pdfjserror', { 
+                detail: err 
+              }));
+            }
+          })();
+        `;
+        
+        const loadPromise = new Promise((resolve, reject) => {
+          const successHandler = (e) => {
+            console.log('✅ PDF.js loaded successfully via script');
+            pdfLibRef.current = e.detail;
+            window.pdfjsLib = e.detail;
+            setPdfJsReady(true);
+            resolve(e.detail);
+          };
+          
+          const errorHandler = (e) => {
+            console.error('❌ PDF.js load error:', e.detail);
+            reject(e.detail);
+          };
+          
+          window.addEventListener('pdfjsready', successHandler, { once: true });
+          window.addEventListener('pdfjserror', errorHandler, { once: true });
+          
+          setTimeout(() => {
+            window.removeEventListener('pdfjsready', successHandler);
+            window.removeEventListener('pdfjserror', errorHandler);
+            
+            if (window.pdfjsLib) {
+              pdfLibRef.current = window.pdfjsLib;
+              setPdfJsReady(true);
+              resolve(window.pdfjsLib);
+            } else {
+              reject(new Error('PDF.js load timeout'));
+            }
+          }, 10000);
+        });
+        
+        document.head.appendChild(script);
+        await loadPromise;
+        
+      } catch (error) {
+        console.error('❌ All PDF.js load methods failed:', error);
+        console.log('💡 Trying fallback method...');
+        
+        try {
+          const pdfUrl = chrome.runtime.getURL('lib/pdf.mjs');
+          const workerUrl = chrome.runtime.getURL('lib/pdf.worker.mjs');
+          
+          const response = await fetch(pdfUrl);
+          const code = await response.text();
+          
+          const blob = new Blob([code], { type: 'application/javascript' });
+          const blobUrl = URL.createObjectURL(blob);
+          
+          const pdfjsModule = await import(blobUrl);
+          
+          if (pdfjsModule.GlobalWorkerOptions) {
+            pdfjsModule.GlobalWorkerOptions.workerSrc = workerUrl;
+          }
+          
+          pdfLibRef.current = pdfjsModule;
+          window.pdfjsLib = pdfjsModule;
+          setPdfJsReady(true);
+          
+          URL.revokeObjectURL(blobUrl);
+          console.log('✅ PDF.js loaded via blob URL fallback');
+          
+        } catch (fallbackError) {
+          console.error('❌ All loading methods exhausted:', fallbackError);
+        }
+      }
+    };
+    
+    loadPDFJS();
   }, []);
 
   useEffect(() => {
@@ -444,6 +653,31 @@ const SidePanel = () => {
     }
   }, []);
 
+
+  const waitForPDFJS = async () => {
+    if (window.pdfjsLib && window.pdfjsLib.getDocument) {
+      return window.pdfjsLib;
+    }
+
+    if (!pdfJsReadyPromise) {
+      pdfJsReadyPromise = new Promise(async (resolve, reject) => {
+        try {
+          console.log("📚 Loading PDF.js...");
+          const pdfjsModule = await import(chrome.runtime.getURL("lib/pdf.mjs"));
+          pdfjsModule.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("lib/pdf.worker.mjs");
+          window.pdfjsLib = pdfjsModule;
+          console.log("✅ PDF.js ready");
+          resolve(pdfjsModule);
+        } catch (err) {
+          console.error("❌ Failed to load PDF.js:", err);
+          reject(err);
+        }
+      });
+    }
+
+    return pdfJsReadyPromise;
+  };
+
   const extractPageContent = async (forChatOnly = false) => {
     isExtractButtonClicked = !forChatOnly;
 
@@ -453,6 +687,24 @@ const SidePanel = () => {
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         
+        const isPDF = tab.url.toLowerCase().endsWith('.pdf') || 
+                    tab.url.includes('pdf') ||
+                    tab.title.toLowerCase().includes('.pdf');
+      
+        if (isPDF) {
+          console.log('📄 Detected PDF, extracting text...');
+          const pdfContent = await extractPDFContent(tab);
+          
+          if (pdfContent) {
+            if (!forChatOnly) {
+              setSelectedText(pdfContent.content);
+              setPageMetadata(pdfContent.metadata);
+            }
+            setIsLoading(false);
+            return pdfContent;
+          }
+        }
+
         const cacheKey = `page_${tab.id}_${tab.url}`;
         const cached = sessionStorage.getItem(cacheKey);
         
@@ -507,6 +759,272 @@ const SidePanel = () => {
       }
       setIsLoading(false);
       return null;
+    }
+  };
+
+  const extractPDFContent = async (tab) => {
+    try {
+      console.log('🔍 Starting PDF extraction for tab:', tab.id);
+      
+      try {
+        console.log('🔍 Attempting to extract from PDF viewer...');
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          function: extractPDFFromViewer
+        });
+
+        if (results && results[0] && results[0].result && 
+            results[0].result.content && results[0].result.content.length > 100) {
+          console.log('✅ Successfully extracted from PDF viewer');
+          return results[0].result;
+        }
+      } catch (viewerError) {
+        console.log('ℹ️ PDF viewer extraction not available:', viewerError.message);
+      }
+
+      if (!pdfJsReady) {
+        console.log('⚠️ PDF.js not ready yet, waiting...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      
+      if (!pdfJsReady) {
+        throw new Error('PDF.js library is not ready. Please wait a moment and try again.');
+      }
+      
+      console.log('🔄 Fetching PDF with PDF.js...');
+      const pdfData = await fetchAndParsePDF(tab.url);
+      
+      if (pdfData && pdfData.content && pdfData.content.length > 0) {
+        console.log('✅ Successfully extracted PDF with PDF.js');
+        return pdfData;
+      }
+
+      console.warn('⚠️ Could not extract PDF content');
+      return {
+        content: '',
+        metadata: {
+          title: tab.title || 'PDF Document',
+          note: 'Unable to extract text from this PDF. It may be:\n' +
+                '• A scanned document (image-based)\n' +
+                '• Password-protected\n' +
+                '• A local file (file:// URLs cannot be fetched)\n' +
+                '• An empty or corrupted PDF',
+          type: 'PDF',
+          suggestion: 'Try copying and pasting the text directly if visible.'
+        }
+      };
+      
+    } catch (error) {
+      console.error('❌ PDF extraction error:', error);
+      return {
+        content: '',
+        metadata: {
+          title: 'Extraction Error',
+          error: error.message,
+          type: 'PDF'
+        }
+      };
+    }
+  };
+
+  function extractPDFFromViewer() {
+    try {
+      const textLayers = document.querySelectorAll('.textLayer');
+      if (textLayers.length > 0) {
+        let fullText = '';
+        textLayers.forEach(layer => {
+          const spans = layer.querySelectorAll('span');
+          spans.forEach(span => {
+            fullText += span.textContent + ' ';
+          });
+          fullText += '\n\n';
+        });
+        
+        if (fullText.trim()) {
+          return {
+            content: fullText.trim(),
+            metadata: {
+              title: document.title.replace('.pdf', ''),
+              length: fullText.length,
+              type: 'PDF'
+            }
+          };
+        }
+      }
+
+      const embedElements = document.querySelectorAll('embed[type="application/pdf"]');
+      if (embedElements.length > 0) {
+        return {
+          content: '',
+          metadata: {
+            title: document.title,
+            note: 'PDF detected but text extraction not available. Please download and open in browser.',
+            type: 'PDF'
+          }
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error in PDF viewer extraction:', error);
+      return null;
+    }
+  }
+
+  const fetchAndParsePDF = async (url) => {
+    try {
+      console.log('📄 Starting PDF extraction for:', url);
+      
+      let attempts = 0;
+      const maxAttempts = 40;
+      
+      while (!pdfJsReady && attempts < maxAttempts) {
+        console.log(`⏳ Waiting for PDF.js... (${attempts * 500}ms)`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        attempts++;
+      }
+      
+       const pdfLib = await waitForPDFJS();
+      
+      if (!pdfLib) {
+        throw new Error('PDF.js not available. Check console for loading errors.');
+      }
+      
+      console.log('✅ PDF.js ready, starting extraction');
+      
+      // if (url.startsWith('file://')) {
+      //   throw new Error('Cannot fetch local file:// URLs directly. Please open the PDF in Chrome first.');
+      // }
+      
+      console.log('📥 Fetching PDF from:', url);
+      const response = await fetch(url, {
+        mode: 'cors',
+        credentials: 'omit'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const contentType = response.headers.get('content-type');
+      console.log('📄 Content-Type:', contentType);
+      
+      const arrayBuffer = await response.arrayBuffer();
+      console.log('📦 PDF downloaded:', arrayBuffer.byteLength, 'bytes');
+      
+      if (arrayBuffer.byteLength < 100) {
+        throw new Error('PDF file is too small or empty');
+      }
+      
+      console.log('📖 Parsing PDF document...');
+      const loadingTask = pdfLib.getDocument({
+        data: arrayBuffer,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true,
+        standardFontDataUrl: chrome.runtime.getURL('lib/')
+      });
+      
+      const pdf = await loadingTask.promise;
+      console.log(`✅ PDF loaded: ${pdf.numPages} pages`);
+      
+      let fullText = '';
+      const maxPages = Math.min(pdf.numPages, 50);
+      
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+        try {
+          console.log(`📄 Extracting page ${pageNum}/${maxPages}...`);
+          
+          const page = await pdf.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          
+          let pageText = '';
+          let lastY = null;
+          
+          textContent.items.forEach((item, index) => {
+            const text = item.str;
+            
+            if (!text.trim()) return;
+            
+            if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
+              pageText += '\n';
+            }
+            
+            pageText += text;
+            
+            if (index < textContent.items.length - 1) {
+              const nextItem = textContent.items[index + 1];
+              const currentEnd = item.transform[4] + item.width;
+              const nextStart = nextItem.transform[4];
+              
+              if (nextStart - currentEnd > 1) {
+                pageText += ' ';
+              }
+            }
+            
+            lastY = item.transform[5];
+          });
+          
+          fullText += pageText + '\n\n';
+          
+        } catch (pageError) {
+          console.error(`❌ Failed to extract page ${pageNum}:`, pageError);
+          fullText += `[Page ${pageNum} failed: ${pageError.message}]\n\n`;
+        }
+      }
+      
+      if (pdf.numPages > maxPages) {
+        fullText += `\n[Note: Extracted ${maxPages} of ${pdf.numPages} pages]`;
+      }
+      
+      const finalText = fullText.trim();
+      
+      console.log('✅ PDF extraction complete:', {
+        pages: maxPages,
+        totalPages: pdf.numPages,
+        characters: finalText.length,
+        words: finalText.split(/\s+/).length
+      });
+      
+      if (finalText.length < 50) {
+        return {
+          content: '',
+          metadata: {
+            title: url.split('/').pop().replace('.pdf', ''),
+            pages: pdf.numPages,
+            error: 'PDF appears to be empty or image-based (scanned)',
+            type: 'PDF'
+          }
+        };
+      }
+      
+      return {
+        content: finalText,
+        metadata: {
+          title: url.split('/').pop().replace('.pdf', ''),
+          pages: pdf.numPages,
+          pagesExtracted: maxPages,
+          length: finalText.length,
+          words: finalText.split(/\s+/).length,
+          type: 'PDF',
+          url: url
+        }
+      };
+      
+    } catch (error) {
+      console.error('❌ PDF extraction failed:', error);
+      
+      return {
+        content: '',
+        metadata: {
+          title: 'PDF Extraction Failed',
+          error: error.message,
+          note: error.message.includes('file://') 
+            ? 'Local files cannot be accessed. Try opening the PDF in a Chrome tab first.'
+            : 'Could not extract PDF content. It may be password-protected or corrupted.',
+          type: 'PDF'
+        }
+      };
     }
   };
 
@@ -1610,6 +2128,15 @@ const SidePanel = () => {
           return null;
         }
 
+        const isPDF = url.toLowerCase().endsWith('.pdf') || 
+                    url.includes('pdf');
+        
+        if (isPDF) {
+          console.log('📄 Extracting PDF content for:', url);
+          const pdfContent = await extractPDFContent({ id: targetTabId, url });
+          return pdfContent;
+        }
+
         console.log('📄 Extracting content from tab', targetTabId, 'for URL:', url);
         
         const cacheKey = `page_${targetTabId}_${url}`;
@@ -1669,7 +2196,6 @@ const SidePanel = () => {
           return null;
         }
       }
-      
       return null;
     } catch (error) {
       console.error('❌ Error extracting page content:', error);
