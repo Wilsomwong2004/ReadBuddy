@@ -786,11 +786,18 @@ const SidePanel = () => {
 
       if (!pdfJsReady) {
         console.log('⚠️ PDF.js not ready yet, waiting...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-      
-      if (!pdfJsReady) {
-        throw new Error('PDF.js library is not ready. Please wait a moment and try again.');
+        
+        let attempts = 0;
+        while (!pdfJsReady && attempts < 20) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          attempts++;
+        }
+        
+        if (!pdfJsReady) {
+          throw new Error('PDF.js library is not ready. Please wait a moment and try again.');
+        }
+
+        console.log('✅ PDF.js is ready, proceeding with extraction');
       }
       
       console.log('🔄 Fetching PDF with PDF.js...');
@@ -988,7 +995,7 @@ const SidePanel = () => {
         words: finalText.split(/\s+/).length
       });
       
-      if (finalText.length < 50) {
+      if (finalText.length < 5) { 
         return {
           content: '',
           metadata: {
@@ -1390,7 +1397,7 @@ const SidePanel = () => {
   
   const summarizeText = async (text, depth = 1, maxDepth = 3) => {
     try {
-      if (userCancelledProcessing) {
+      if (depth > 1 && userCancelledProcessing) {
         throw new Error('Processing cancelled by user');
       }
 
@@ -1434,6 +1441,8 @@ const SidePanel = () => {
 
           if (!userConfirmed) {
             setUserCancelledProcessing(true);
+            userCancelledRef.current = true;
+
             const recommendation = `❌ Processing cancelled.\n\n` +
               `**Recommendations:**\n` +
               `• Select a smaller portion of the page (e.g., specific sections or paragraphs)\n` +
@@ -1443,7 +1452,9 @@ const SidePanel = () => {
               `**Current text size:** ${text.length.toLocaleString()} characters, ${wordCount.toLocaleString()} words`;
             setResult(recommendation);
             setIsLoading(false);
-            return recommendation;
+            // return recommendation;
+
+            throw new Error('User cancelled processing');
           }
         }
 
@@ -1521,6 +1532,15 @@ const SidePanel = () => {
         }
 
         if (depth === 1) {
+          let displaySummary = finalSummary;
+  
+          if (summaryMode === 'qa') {
+            const qaMatches = displaySummary.match(/(Q\d+:[\s\S]*?A\d+:[\s\S]*?)(?=Q\d+:|$)/g);
+            if (qaMatches && qaMatches.length > 5) {
+              displaySummary = qaMatches.slice(0, 5).join('\n\n');
+            }
+          }
+
           const result = `**Full Content Summary (${detailLevel.charAt(0).toUpperCase() + detailLevel.slice(1)} - ${summaryMode === 'bullets' ? 'Bullet Points' : summaryMode === 'paragraph' ? 'Paragraph' : 'Q&A'})**\n\n${finalSummary}\n\n---\n*Processed ${chunks.length} sections*`;
           setResult(result);
           setUserCancelledProcessing(false);
@@ -1550,27 +1570,49 @@ const SidePanel = () => {
           throw new Error('❌ Prompt API not available for Q&A generation');
         }
 
-        const prompt = `
-          Based on the following summary, generate at least 3 detailed Q&A pairs 
-          (recommended 5). 
-          If you naturally find more than 5 strong questions, you may include them all.
-          - Cover background, reasoning, implications, and author's perspective.
-          - Keep answers concise but informative.
-          Summary:
-          "${summary}"
-          
-          Format:
-          Q1: ...
-          A1: ...
-          Q2: ...
-          A2: ...
-        `;
+        const qaPrompt = depth === 1 
+          ? `Based on the following summary, generate EXACTLY 5 detailed Q&A pairs.
+            - Cover background, reasoning, implications, and author's perspective.
+            - Keep answers concise but informative.
+            - Number them Q1-Q5 and A1-A5.
+            
+            Summary: "${summary}"
+            
+            Format:
+            Q1: ...
+            A1: ...
+            Q2: ...
+            A2: ...
+            ...
+            Q5: ...
+            A5: ...`
+          : `Based on the following summary, generate EXACTLY 2 key Q&A pairs (for combining later).
+            - Focus on the most important points only.
+            - Keep answers brief.
+            
+            Summary: "${summary}"
+            
+            Format:
+            Q: ...
+            A: ...`;
+
+        const prompt = qaPrompt;
 
         const session = await LanguageModel.create();
         const extraQA = await session.prompt(prompt);
 
         if (depth === 1) {
-          summary = `**In-Depth Q&A Based on Summary:**\n${extraQA}`;
+          let cleanQA = extraQA
+            .replace(/\*\*In-Depth Q&A.*?\*\*\n*/g, '')
+            .replace(/Here are \d+ detailed Q&A pairs.*?\n*/g, '')
+            .trim();
+          
+          const qaMatches = cleanQA.match(/(Q\d+:[\s\S]*?A\d+:[\s\S]*?)(?=Q\d+:|$)/g);
+          if (qaMatches && qaMatches.length > 5) {
+            cleanQA = qaMatches.slice(0, 5).join('\n\n');
+          }
+          
+          summary = `**Q&A Summary:**\n\n${cleanQA}`;
         } else {
           const lastQMatch = result?.match(/Q(\d+):/g);
           let lastQNum = 0;
@@ -1585,10 +1627,11 @@ const SidePanel = () => {
             return `Q${nextQNum}:`;
           });
 
-          summary = summary
-            .replace(/In-Depth Q&A Based on Summary:.*?\n/g, '')
-            .replace(/Here are \d+ detailed Q&A pairs based on the provided summary:.*?\n/g, '')
-            .trim();
+          summary = extraQA
+              .replace(/\*\*In-Depth Q&A.*?\*\*\n*/g, '')
+              .replace(/Here are \d+ detailed Q&A pairs.*?\n*/g, '')
+              .replace(/Q:/g, 'Q:')  // Keep simple format
+              .trim();
         }
         session.destroy();
       }
@@ -1981,7 +2024,7 @@ const SidePanel = () => {
         return null;
       }
 
-      if (!extractedData || !extractedData.content || extractedData.content.trim().length < 100) {
+      if (!extractedData || !extractedData.content || extractedData.content.trim().length < 5) { 
         console.error('❌ Cannot read this page - extraction failed or insufficient', {
           hasExtractedData: !!extractedData,
           hasContent: !!extractedData?.content,
@@ -2425,7 +2468,8 @@ const SidePanel = () => {
       setResult(processedResult);
     } catch (error) {
       console.error('Processing error:', error);
-      if (error.message === 'Processing cancelled by user') {
+      if (error.message === 'Processing cancelled by user' || error.message === 'User cancelled processing') {
+        console.log('✅ User cancelled - state already set');
       } else {
         setResult('An error occurred while processing the text. Please try again.');
       }
@@ -2920,7 +2964,11 @@ const SidePanel = () => {
         {/* Action Button */}
         {activeTab !== 'chat' && (
           <button
-            onClick={() => processText(activeTab, selectedText, { isManualClick: true })}
+            onClick={() => {
+              setUserCancelledProcessing(false);
+              userCancelledRef.current = false;
+              processText(activeTab, selectedText, { isManualClick: true });
+            }}
             disabled={isLoading || !selectedText.trim()}
             className={`w-full mt-4 py-3 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none ${
               activeTab === 'summarize' ? 'bg-blue-500 hover:bg-blue-600' :
