@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import { BookOpen, Settings } from 'lucide-react';
+import { BookOpen, Github, Heart, Settings, Link} from 'lucide-react';
 import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
 import DarkModeButton from './utils/darkModeBtn';
 
@@ -272,12 +272,33 @@ const Popup = () => {
       </div>
 
       {/* Footer */}
-      <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span>Chrome API</span>
-          <span>Version 1.0.0</span>
+        <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex items-center space-x-2">
+              <Heart className="w-4 h-4 text-red-500 dark:text-red-600" />
+              <span>Version 1.0.0</span>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <a
+                href="https://github.com/Wilsomwong2004/ReadBuddy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 dark:text-blue-600 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              >
+                <Github className="w-4 h-4" />
+              </a>
+              <a
+                href="https://wilsomwong.space/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline"
+              >
+                <Link className="w-4 h-4 dark:text-purple-600 text-purple-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors" />
+              </a>
+            </div>
+          </div>
         </div>
-      </div>
     </div>
   );
 };

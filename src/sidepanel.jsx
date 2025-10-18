@@ -1697,6 +1697,8 @@ const SidePanel = () => {
         return `Text is already in target language (${targetLang.toUpperCase()}):\n\n${text}`;
       }
 
+      const paragraphs = text.split(/\n\n+/);
+
       const translator = await Translator.create({
         sourceLanguage: fromLang,
         targetLanguage: targetLang,
@@ -1708,8 +1710,25 @@ const SidePanel = () => {
         // }
       });
 
-      const translation = await translator.translate(text);
+      const translatedParagraphs = [];
+      for (const paragraph of paragraphs) {
+        const trimmedParagraph = paragraph.trim();
+        if (trimmedParagraph) {
+          try {
+            const translated = await translator.translate(trimmedParagraph);
+            translatedParagraphs.push(translated);
+          } catch (error) {
+            console.error('Translation error for paragraph:', error);
+            translatedParagraphs.push(trimmedParagraph);
+          }
+        } else {
+          translatedParagraphs.push(''); 
+        }
+      }
+
       translator.destroy();
+
+      const translation = translatedParagraphs.join('\n\n');
 
       const fromLangName = languages.find(l => l.code === fromLang)?.name || fromLang.toUpperCase();
       const toLangName = languages.find(l => l.code === targetLang)?.name || targetLang.toUpperCase();

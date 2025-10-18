@@ -4,12 +4,19 @@ let selectedText = '';
 let isEnabled = true;
 let isTooltipVisible = false;
 let isDarkMode = false;
+let extensionContextValid = true;
+let scrollTimeout = null;
+let isScrolling = false;
+let pendingSelection = null;
 
 // Check if extension context is valid
 function isExtensionContextValid() {
   try {
-    return chrome.runtime && chrome.runtime.id;
+    const valid = chrome.runtime && chrome.runtime.id;
+    extensionContextValid = valid;
+    return valid;
   } catch (e) {
+    extensionContextValid = false;
     return false;
   }
 }
@@ -98,19 +105,59 @@ function showExtensionReloadNotification() {
   document.body.appendChild(notification);
 }
 
-// Check if extension is enabled
-if (isExtensionContextValid()) {
+// Initialize extension state
+function initializeExtension() {
+  if (!isExtensionContextValid()) {
+    console.log('[Content] Extension context invalid during initialization');
+    return;
+  }
+
   chrome.storage.local.get("isEnabled", (data) => {
+    if (chrome.runtime.lastError) {
+      console.warn('[Content] Error getting isEnabled:', chrome.runtime.lastError);
+      return;
+    }
     isEnabled = data.isEnabled !== false;
     console.log('[Content] Extension enabled:', isEnabled);
   });
 
-  // Check dark mode setting
   chrome.storage.local.get("darkMode", (data) => {
+    if (chrome.runtime.lastError) {
+      console.warn('[Content] Error getting darkMode:', chrome.runtime.lastError);
+      return;
+    }
     isDarkMode = data.darkMode === true;
     console.log('[Content] Dark mode:', isDarkMode);
   });
+}
 
+// Initial setup
+initializeExtension();
+
+// Re-initialize when page becomes visible (tab switching)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    console.log('[Content] Tab became visible, reinitializing...');
+    
+    // Small delay to ensure extension context is ready
+    setTimeout(() => {
+      initializeExtension();
+    }, 100);
+  }
+});
+
+// Re-initialize on focus (additional safety)
+window.addEventListener('focus', () => {
+  console.log('[Content] Window focused, checking extension state...');
+  
+  setTimeout(() => {
+    if (isExtensionContextValid()) {
+      initializeExtension();
+    }
+  }, 50);
+});
+
+if (isExtensionContextValid()) {
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === "local" && changes.isEnabled) {
       isEnabled = changes.isEnabled.newValue;
@@ -173,30 +220,127 @@ document.addEventListener('mouseup', (e) => {
   
   if (selectedText && selectedText.length > 10) {
     console.log('[Content] Showing tooltip for text:', selectedText.substring(0, 50) + '...');
-    showQuickActions(selectedText);
+    
+    // If currently scrolling, save selection for later
+    if (isScrolling) {
+      pendingSelection = {
+        text: selectedText,
+        selection: selection,
+        range: selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+      };
+      console.log('[Content] Scrolling detected, tooltip will show after scroll stops');
+    } else {
+      showQuickActions(selectedText);
+    }
   } else {
     console.log('[Content] Text too short, hiding tooltip');
     hideQuickActions();
+    pendingSelection = null;
   }
 });
 
+// Handle scroll events
+let lastScrollTime = 0;
+document.addEventListener('scroll', () => {
+  lastScrollTime = Date.now();
+  
+  if (!isScrolling) {
+    isScrolling = true;
+    console.log('[Content] Scroll started');
+    
+    // Hide tooltip with fade out when scrolling starts
+    const tooltip = document.getElementById('readbuddy-tooltip');
+    if (tooltip && isTooltipVisible) {
+      tooltip.style.transition = 'opacity 0.2s ease-out';
+      tooltip.style.opacity = '0';
+      setTimeout(() => {
+        if (isScrolling) { // Only hide if still scrolling
+          tooltip.style.display = 'none';
+        }
+      }, 200);
+    }
+  }
+  
+  // Clear previous timeout
+  if (scrollTimeout) {
+    clearTimeout(scrollTimeout);
+  }
+  
+  // Set new timeout to detect scroll end
+  scrollTimeout = setTimeout(() => {
+    isScrolling = false;
+    console.log('[Content] Scroll ended');
+    
+    // Re-check if text is still selected after scroll
+    const selection = window.getSelection();
+    const currentText = selection.toString().trim();
+    
+    console.log('[Content] After scroll - selected text length:', currentText.length);
+    
+    if (currentText && currentText.length > 10) {
+      console.log('[Content] Showing tooltip after scroll stops');
+      showQuickActions(currentText);
+    }
+  }, 150); // Show tooltip 150ms after scroll stops
+}, { passive: true });
+
+// Handle wheel events (for mouse wheel scrolling while selecting)
+document.addEventListener('wheel', () => {
+  lastScrollTime = Date.now();
+  
+  if (!isScrolling) {
+    isScrolling = true;
+    console.log('[Content] Wheel scroll started');
+    
+    const tooltip = document.getElementById('readbuddy-tooltip');
+    if (tooltip && isTooltipVisible) {
+      tooltip.style.transition = 'opacity 0.2s ease-out';
+      tooltip.style.opacity = '0';
+      setTimeout(() => {
+        if (isScrolling) {
+          tooltip.style.display = 'none';
+        }
+      }, 200);
+    }
+  }
+  
+  if (scrollTimeout) {
+    clearTimeout(scrollTimeout);
+  }
+  
+  scrollTimeout = setTimeout(() => {
+    isScrolling = false;
+    console.log('[Content] Wheel scroll ended');
+    
+    // Check if there's selected text after wheel scroll
+    const selection = window.getSelection();
+    const text = selection.toString().trim();
+    
+    console.log('[Content] After wheel scroll - selected text length:', text.length);
+    
+    if (text && text.length > 10) {
+      console.log('[Content] Showing tooltip after wheel scroll');
+      showQuickActions(text);
+    }
+  }, 150);
+}, { passive: true });
+
 function showQuickActions(text) {
   if (!isEnabled) {
-    console.log('[Content] Extension disabled — no tooltip shown.');
+    console.log('[Content] Extension disabled – no tooltip shown.');
     return;
   }
 
   if (!isExtensionContextValid()) {
-    console.log('[Content] Extension context invalid — no tooltip shown.');
+    console.log('[Content] Extension context invalid – no tooltip shown.');
     return;
   }
 
-  if (isTooltipVisible) {
-    console.log('[Content] Tooltip already visible, skipping recreation');
-    return;
+  // Remove existing tooltip first
+  const existingTooltip = document.getElementById('readbuddy-tooltip');
+  if (existingTooltip) {
+    existingTooltip.remove();
   }
-
-  hideQuickActions();
   
   const selection = window.getSelection();
   if (!selection.rangeCount) {
@@ -223,7 +367,7 @@ function showQuickActions(text) {
         <span class="icon">📄</span>
       </button>
       <button data-action="translate" title="Translate" class="${isDarkMode ? 'dark:bg-gray-700 dark:hover:bg-green-900' : ''}">
-        <span class="icon">🌐</span>
+        <span class="icon">🌍</span>
       </button>
       <button data-action="explain" title="Explain" class="${isDarkMode ? 'dark:bg-gray-700 dark:hover:bg-yellow-900' : ''}">
         <span class="icon">💡</span>
@@ -237,10 +381,19 @@ function showQuickActions(text) {
   // Position the tooltip
   tooltip.style.position = 'fixed';
   tooltip.style.top = `${rect.top - 70}px`;
-  tooltip.style.left = `${rect.left + (rect.width / 2) - 100}px`; // Adjusted for smaller width
+  tooltip.style.left = `${rect.left + (rect.width / 2) - 100}px`;
   tooltip.style.zIndex = '999999';
+  tooltip.style.opacity = '0';
+  tooltip.style.display = 'block';
+  tooltip.style.transition = 'opacity 0.3s ease-in';
   
   document.body.appendChild(tooltip);
+  
+  // Trigger fade in animation
+  requestAnimationFrame(() => {
+    tooltip.style.opacity = '1';
+  });
+  
   isTooltipVisible = true;
   console.log('[Content] Tooltip added to DOM with dark mode:', isDarkMode);
   
