@@ -34,14 +34,14 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["lib/*.mjs", "settings.html"],
+      "resources": ["lib/*.mjs", "lib/mermaid.min.js", "settings.html"],
       "matches": ["<all_urls>"]
     }
   ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["readability.js", "content.js"],
+      "js": ["lib/readability.js", "content.js"],
       "css": ["content.css"]
     }
   ],

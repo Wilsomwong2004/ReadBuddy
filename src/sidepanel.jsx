@@ -145,30 +145,116 @@ const SidePanel = () => {
     initializePageRead();
   }, []);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !window.mermaidInitialized) {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
-      script.onload = () => {
-        window.mermaid.initialize({ 
-          startOnLoad: false,
-          theme: isDarkMode ? 'dark' : 'default',
-          mindmap: {
-            padding: 20,
-            useMaxWidth: false
-          },
-          securityLevel: 'loose',
-          fontFamily: 'system-ui, -apple-system, sans-serif'
-        });
-        window.mermaidInitialized = true;
-        console.log('✅ Mermaid initialized');
-      };
-      script.onerror = () => {
-        console.error('❌ Failed to load Mermaid library');
-      };
-      document.head.appendChild(script);
+ useEffect(() => {
+  const initMermaid = async () => {
+    if (window.mermaid && window.mermaidInitialized) {
+      console.log('✅ Mermaid already loaded and initialized');
+      return;
     }
-  }, []);
+
+    if (window.mermaidLoading) {
+      console.log('⏳ Mermaid is already loading...');
+      return;
+    }
+
+    window.mermaidLoading = true;
+
+    try {
+      const existingScript = document.querySelector('script[data-mermaid-script]');
+      if (existingScript) {
+        console.log('🗑️ Removing existing Mermaid script');
+        existingScript.remove();
+      }
+
+      console.log('📦 Loading Mermaid from local files...');
+      
+      const mermaidUrl = chrome.runtime.getURL('lib/mermaid.min.js');
+      console.log('📂 Mermaid URL:', mermaidUrl);
+      
+      const script = document.createElement('script');
+      script.src = mermaidUrl;
+      script.setAttribute('data-mermaid-script', 'true');
+      script.async = false;
+      
+      const loadPromise = new Promise((resolve, reject) => {
+        script.onload = () => {
+          console.log('✅ Mermaid script loaded from local file');
+          
+          if (window.mermaid) {
+            try {
+              window.mermaid.initialize({ 
+                startOnLoad: false,
+                theme: isDarkMode ? 'dark' : 'default',
+                mindmap: {
+                  padding: 20,
+                  useMaxWidth: true
+                },
+                securityLevel: 'loose',
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+                logLevel: 'debug'
+              });
+              
+              window.mermaidInitialized = true;
+              window.mermaidLoading = false;
+              console.log('✅ Mermaid initialized successfully');
+              resolve();
+            } catch (initError) {
+              console.error('❌ Mermaid initialization error:', initError);
+              reject(initError);
+            }
+          } else {
+            const error = new Error('window.mermaid not available after script load');
+            console.error('❌', error.message);
+            reject(error);
+          }
+        };
+        
+        script.onerror = (error) => {
+          console.error('❌ Failed to load Mermaid script:', error);
+          window.mermaidLoading = false;
+          reject(error);
+        };
+      });
+      
+      document.head.appendChild(script);
+      await loadPromise;
+      
+    } catch (error) {
+      console.error('❌ Error loading Mermaid:', error);
+      window.mermaidLoading = false;
+      
+      console.log('🔄 Attempting CDN fallback...');
+      try {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+        script.setAttribute('data-mermaid-script', 'true');
+        script.async = true;
+        
+        script.onload = () => {
+          if (window.mermaid) {
+            window.mermaid.initialize({ 
+              startOnLoad: false,
+              theme: isDarkMode ? 'dark' : 'default',
+              mindmap: {
+                padding: 20,
+                useMaxWidth: true
+              },
+              securityLevel: 'loose'
+            });
+            window.mermaidInitialized = true;
+            console.log('✅ Mermaid loaded from CDN fallback');
+          }
+        };
+        
+        document.head.appendChild(script);
+      } catch (fallbackError) {
+        console.error('❌ CDN fallback also failed:', fallbackError);
+      }
+    }
+  };
+
+  initMermaid();
+}, [isDarkMode]);
 
   useEffect(() => {
     if (showMindmap && mindmapData && window.mermaid) {
@@ -547,34 +633,123 @@ const SidePanel = () => {
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const [svgContent, setSvgContent] = useState('');
+    const [renderError, setRenderError] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
     const containerRef = useRef(null);
-    const mermaidId = useRef(`mermaid-${Date.now()}`);
+    const renderAttemptRef = useRef(0);
 
     useEffect(() => {
       const renderMermaid = async () => {
-        if (mermaidCode && window.mermaid) {
+        renderAttemptRef.current += 1;
+        const attemptId = renderAttemptRef.current;
+        
+        console.log(`🎨 Render attempt #${attemptId}`);
+        console.log('📝 Has mermaidCode:', !!mermaidCode);
+        console.log('📝 Code length:', mermaidCode?.length);
+        
+        if (!mermaidCode || !mermaidCode.trim()) {
+          console.log('⚠️ No mermaidCode provided');
+          setIsLoading(false);
+          return;
+        }
+
+        // Wait for Mermaid to be ready (max 10 seconds)
+        console.log('⏳ Waiting for Mermaid to load...');
+        let attempts = 0;
+        const maxAttempts = 100; // 10 seconds max
+        
+        while (!window.mermaid && attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          attempts++;
+          if (attempts % 10 === 0) {
+            console.log(`⏳ Still waiting... (${attempts * 100}ms)`);
+          }
+        }
+
+        if (!window.mermaid) {
+          console.error('❌ Mermaid failed to load after 10 seconds');
+          setRenderError('Mermaid library failed to load. Please check console for errors.');
+          setIsLoading(false);
+          return;
+        }
+
+        console.log('✅ Mermaid is available!');
+        console.log('🔍 Mermaid version:', window.mermaid.version || 'unknown');
+
+        try {
+          console.log('🎨 Starting render process...');
+          
+          // Clear previous content
+          setSvgContent('');
+          setRenderError(null);
+
+          // Ensure initialization
           try {
-            // Re-initialize mermaid with current theme
-            window.mermaid.initialize({ 
+            await window.mermaid.initialize({ 
               startOnLoad: false,
               theme: isDarkMode ? 'dark' : 'default',
               mindmap: {
                 padding: 20,
-                useMaxWidth: false
+                useMaxWidth: true
               },
-              securityLevel: 'loose'
+              securityLevel: 'loose',
+              fontFamily: 'system-ui, -apple-system, sans-serif'
             });
-
-            // Generate unique ID for this render
-            const id = mermaidId.current;
-            
-            // Render the diagram
-            const { svg } = await window.mermaid.render(id, mermaidCode);
-            setSvgContent(svg);
-          } catch (error) {
-            console.error('Mermaid render error:', error);
-            setSvgContent('<div class="text-red-500 p-4">Failed to render mindmap. Please try generating again.</div>');
+            console.log('✅ Mermaid re-initialized for this render');
+          } catch (initErr) {
+            console.warn('⚠️ Re-initialization warning:', initErr);
+            // Continue anyway, might already be initialized
           }
+
+          // Generate unique ID
+          const id = `mindmap-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          
+          console.log('🔨 Rendering with ID:', id);
+          console.log('📝 Code to render:', mermaidCode);
+          
+          // Render the diagram
+          const renderResult = await window.mermaid.render(id, mermaidCode);
+          console.log('✅ Mermaid.render() completed');
+          console.log('📊 Result keys:', Object.keys(renderResult));
+          
+          const svg = renderResult.svg || renderResult;
+          
+          if (!svg) {
+            throw new Error('Render result has no SVG content');
+          }
+          
+          console.log('✅ SVG generated successfully!');
+          console.log('📊 SVG length:', svg.length);
+          console.log('📊 SVG starts with:', svg.substring(0, 100));
+          
+          // Only update if this is still the latest render attempt
+          if (attemptId === renderAttemptRef.current) {
+            setSvgContent(svg);
+            setIsLoading(false);
+            console.log('✅ SVG content set in state');
+          } else {
+            console.log('⚠️ Discarding old render result');
+          }
+          
+        } catch (error) {
+          console.error('❌ Mermaid render error:', error);
+          console.error('Error name:', error.name);
+          console.error('Error message:', error.message);
+          console.error('Error stack:', error.stack);
+          
+          setRenderError(error.message);
+          setIsLoading(false);
+          
+          setSvgContent(`
+            <div style="padding: 16px; background: #fee; border-radius: 8px; color: #c00;">
+              <h4 style="margin: 0 0 8px 0; font-weight: bold;">❌ Mindmap Render Failed</h4>
+              <p style="margin: 0 0 8px 0; font-size: 14px;">${error.message}</p>
+              <details style="font-size: 12px; margin-top: 8px;">
+                <summary style="cursor: pointer;">Show Code</summary>
+                <pre style="margin-top: 8px; padding: 8px; background: white; border-radius: 4px; overflow: auto;">${mermaidCode}</pre>
+              </details>
+            </div>
+          `);
         }
       };
 
@@ -625,37 +800,58 @@ const SidePanel = () => {
       }
     }, [isDragging, dragStart]);
 
+    // Debug info
+    useEffect(() => {
+      console.log('🔍 MindmapViewer state:', {
+        isLoading,
+        hasSvgContent: !!svgContent,
+        svgLength: svgContent?.length || 0,
+        hasError: !!renderError
+      });
+    }, [isLoading, svgContent, renderError]);
+
+    if (isLoading && !svgContent) {
+      return (
+        <div className="relative w-full h-[500px] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-4xl mb-2">🧠</div>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Rendering mindmap...</p>
+            <div className="flex space-x-1 mt-2 justify-center">
+              <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+              <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+              <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="relative w-full h-[500px] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 animate-in fade-in slide-in-from-right duration-500">
-        {/* Controls */}
-        <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 animate-in fade-in slide-in-from-top duration-300">
+      <div className="relative w-full h-[500px] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
+        <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
           <button
             onClick={() => setScale(s => Math.min(s + 0.2, 3))}
-            className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 text-sm font-medium transform hover:scale-110 active:scale-95"
-            title="Zoom In"
+            className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all text-sm font-medium"
           >
             🔍 +
           </button>
           <button
             onClick={() => setScale(s => Math.max(s - 0.2, 0.5))}
-            className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 text-sm font-medium transform hover:scale-110 active:scale-95"
-            title="Zoom Out"
+            className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all text-sm font-medium"
           >
             🔍 −
           </button>
           <button
             onClick={resetView}
-            className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 text-sm font-medium transform hover:scale-110 active:scale-95"
-            title="Reset View"
+            className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all text-sm font-medium"
           >
-            ↺
+            ↻
           </button>
           <div className="px-2 py-1 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg shadow-md text-xs text-center">
             {Math.round(scale * 100)}%
           </div>
         </div>
 
-        {/* Mindmap Container */}
         <div
           ref={containerRef}
           className={`w-full h-full flex items-center justify-center p-8 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
@@ -663,20 +859,20 @@ const SidePanel = () => {
           onMouseDown={handleMouseDown}
         >
           <div
-            className="mermaid-container transition-transform duration-100 ease-out"
+            className="mermaid-container"
             style={{
               transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+              transition: isDragging ? 'none' : 'transform 0.1s ease-out'
             }}
             dangerouslySetInnerHTML={{ __html: svgContent }}
           />
         </div>
 
-        {/* Instructions */}
-        <div className="absolute bottom-4 left-4 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow-md border border-gray-200 dark:border-gray-600 animate-in fade-in slide-in-from-bottom duration-300">
+        <div className="absolute bottom-4 left-4 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow-md border border-gray-200 dark:border-gray-600">
           <div className="flex items-center space-x-4">
             <span>🖱️ Drag to move</span>
-            <span>📜 Scroll to zoom</span>
-            <span>↺ Click reset to center</span>
+            <span>🔜 Scroll to zoom</span>
+            <span>↻ Reset view</span>
           </div>
         </div>
       </div>
@@ -4001,6 +4197,18 @@ const SidePanel = () => {
 
         .mermaid-container .mindmap-node:hover {
           filter: brightness(1.1);
+        }
+
+        .mermaid-container svg {
+          max-width: 100% !important;
+          height: auto !important;
+          display: block;
+        }
+
+        .mermaid-container {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
         }
       `}</style>
     </div>
