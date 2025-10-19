@@ -38,6 +38,25 @@ const SidePanel = () => {
   const [pdfJsReady, setPdfJsReady] = useState(false);
   const pdfLibRef = useRef(null);
 
+  const [tabResults, setTabResults] = useState({
+    summarize: '',
+    translate: '',
+    explain: ''
+  });
+  const [tabRelatedConcepts, setTabRelatedConcepts] = useState({
+    summarize: '',
+    translate: '',
+    explain: ''
+  });
+  const [tabMindmapData, setTabMindmapData] = useState({
+    summarize: '',
+    explain: ''
+  });
+  const [tabShowMindmap, setTabShowMindmap] = useState({
+    summarize: false,
+    explain: false
+  });
+
   const [isPageContextLoaded, setIsPageContextLoaded] = useState(false);
   const [currentPageUrl, setCurrentPageUrl] = useState('');
   const [lastReadUrl, setLastReadUrl] = useState('');
@@ -342,9 +361,17 @@ const SidePanel = () => {
 
   useEffect(() => {
     if (activeTab === 'chat') {
-      setResult('');
+      // setResult('');
     } else {
-      setResult('');
+      setResult(tabResults[activeTab] || '');
+      setRelatedConcepts(tabRelatedConcepts[activeTab] || '');
+      
+      if (activeTab === 'summarize' || activeTab === 'explain') {
+        setMindmapData(tabMindmapData[activeTab] || '');
+        setShowMindmap(tabShowMindmap[activeTab] || false);
+      } else {
+        setShowMindmap(false);
+      }
     }
 
     const checkUrl = async () => {
@@ -1998,6 +2025,15 @@ const SidePanel = () => {
       console.log('Generated mindmap:', cleanedMindmap);
       setMindmapData(cleanedMindmap);
       setShowMindmap(true);
+
+      setTabMindmapData(prev => ({
+        ...prev,
+        [activeTab]: cleanedMindmap
+      }));
+      setTabShowMindmap(prev => ({
+        ...prev,
+        [activeTab]: true
+      }));
       
     } catch (error) {
       console.error('Mindmap generation error:', error);
@@ -2017,6 +2053,15 @@ const SidePanel = () => {
       
       setMindmapData(fallbackMindmap);
       setShowMindmap(true);
+
+      setTabMindmapData(prev => ({
+        ...prev,
+        [activeTab]: fallbackMindmap
+      }));
+      setTabShowMindmap(prev => ({
+        ...prev,
+        [activeTab]: true
+      }));
     } finally {
       setIsGeneratingMindmap(false);
     }
@@ -3167,13 +3212,24 @@ const SidePanel = () => {
     try {
       let processedResult = '';
 
-      try {
-        const concepts = await generateRelatedConcepts(selectedText || text);
-        setRelatedConcepts(concepts);
-      } catch (err) {
-        setRelatedConcepts("❌ Failed to generate related concepts.");
+      if (action !== 'chat') {
+        try {
+          const concepts = await generateRelatedConcepts(selectedText || text);
+          setRelatedConcepts(concepts);
+          setTabRelatedConcepts(prev => ({
+            ...prev,
+            [action]: concepts
+          }));
+        } catch (err) {
+          const errorMsg = "❌ Failed to generate related concepts.";
+          setRelatedConcepts(errorMsg);
+          setTabRelatedConcepts(prev => ({
+            ...prev,
+            [action]: errorMsg
+          }));
+        }
       }
-      
+        
       switch (action) {
         case 'summarize':
           processedResult = await summarizeText(text);
@@ -3195,8 +3251,15 @@ const SidePanel = () => {
         default:
           processedResult = 'Unknown action';
       }
-      
+
       setResult(processedResult);
+      
+      if (action !== 'chat') {
+        setTabResults(prev => ({
+          ...prev,
+          [action]: processedResult
+        }));
+      }
     } catch (error) {
       console.error('Processing error:', error);
       if (error.message === 'Processing cancelled by user' || error.message === 'User cancelled processing') {
@@ -3733,7 +3796,13 @@ const SidePanel = () => {
                   />
                   
                   <button
-                    onClick={() => setShowMindmap(false)}
+                    onClick={() => {
+                      setShowMindmap(false);
+                      setTabShowMindmap(prev => ({
+                        ...prev,
+                        [activeTab]: false
+                      }));
+                    }}
                     disabled={isGeneratingMindmap}
                     className={`relative z-10 px-4 py-1 rounded-full text-xs font-medium transition-all duration-300 ${
                       !showMindmap 
@@ -3749,6 +3818,10 @@ const SidePanel = () => {
                         generateMindmap();
                       } else {
                         setShowMindmap(true);
+                        setTabShowMindmap(prev => ({
+                          ...prev,
+                          [activeTab]: true
+                        }));
                       }
                     }}
                     disabled={isGeneratingMindmap}

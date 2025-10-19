@@ -215,7 +215,7 @@ const ReadBuddyNotesPage = () => {
 
   const SidebarNav = () => (
     <div className="flex flex-col h-full">
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-6">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
           <BookOpen className="w-7 h-7 text-blue-600 dark:text-blue-400" />
           ReadBuddy
