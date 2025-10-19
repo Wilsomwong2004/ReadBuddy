@@ -52,6 +52,10 @@ const SidePanel = () => {
   const [showAIGlow, setShowAIGlow] = useState(false);
   const [canExtractPage, setCanExtractPage] = useState(true);
 
+  const [showMindmap, setShowMindmap] = useState(false);
+  const [mindmapData, setMindmapData] = useState('');
+  const [isGeneratingMindmap, setIsGeneratingMindmap] = useState(false);
+
   const [processingQueue, setProcessingQueue] = useState([]);
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const processingQueueRef = useRef([]);
@@ -108,6 +112,14 @@ const SidePanel = () => {
   const isManualClick = useState(false);
 
   useEffect(() => {
+    if (activeTab !== 'summarize' && activeTab !== 'explain') {
+      setShowMindmap(false);
+      setMindmapData('');
+      setIsGeneratingMindmap(false);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     checkAPISupport();
 
     const initializePageRead = async () => {
@@ -132,6 +144,39 @@ const SidePanel = () => {
     
     initializePageRead();
   }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !window.mermaidInitialized) {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+      script.onload = () => {
+        window.mermaid.initialize({ 
+          startOnLoad: false,
+          theme: isDarkMode ? 'dark' : 'default',
+          mindmap: {
+            padding: 20,
+            useMaxWidth: false
+          },
+          securityLevel: 'loose',
+          fontFamily: 'system-ui, -apple-system, sans-serif'
+        });
+        window.mermaidInitialized = true;
+        console.log('✅ Mermaid initialized');
+      };
+      script.onerror = () => {
+        console.error('❌ Failed to load Mermaid library');
+      };
+      document.head.appendChild(script);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showMindmap && mindmapData && window.mermaid) {
+      setTimeout(() => {
+        window.mermaid.init(undefined, document.querySelectorAll('.mermaid'));
+      }, 100);
+    }
+  }, [showMindmap, mindmapData, isDarkMode]);
 
   useEffect(() => {
     const initPDFJS = async () => {
@@ -495,6 +540,148 @@ const SidePanel = () => {
   // const handleSave = () => {
   //   setActivePanel("save");
   // };
+
+  const MindmapViewer = ({ mermaidCode }) => {
+    const [scale, setScale] = useState(1);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const [svgContent, setSvgContent] = useState('');
+    const containerRef = useRef(null);
+    const mermaidId = useRef(`mermaid-${Date.now()}`);
+
+    useEffect(() => {
+      const renderMermaid = async () => {
+        if (mermaidCode && window.mermaid) {
+          try {
+            // Re-initialize mermaid with current theme
+            window.mermaid.initialize({ 
+              startOnLoad: false,
+              theme: isDarkMode ? 'dark' : 'default',
+              mindmap: {
+                padding: 20,
+                useMaxWidth: false
+              },
+              securityLevel: 'loose'
+            });
+
+            // Generate unique ID for this render
+            const id = mermaidId.current;
+            
+            // Render the diagram
+            const { svg } = await window.mermaid.render(id, mermaidCode);
+            setSvgContent(svg);
+          } catch (error) {
+            console.error('Mermaid render error:', error);
+            setSvgContent('<div class="text-red-500 p-4">Failed to render mindmap. Please try generating again.</div>');
+          }
+        }
+      };
+
+      renderMermaid();
+    }, [mermaidCode, isDarkMode]);
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const delta = e.deltaY * -0.001;
+      const newScale = Math.min(Math.max(0.5, scale + delta), 3);
+      setScale(newScale);
+    };
+
+    const handleMouseDown = (e) => {
+      setIsDragging(true);
+      setDragStart({
+        x: e.clientX - position.x,
+        y: e.clientY - position.y
+      });
+    };
+
+    const handleMouseMove = (e) => {
+      if (isDragging) {
+        setPosition({
+          x: e.clientX - dragStart.x,
+          y: e.clientY - dragStart.y
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    const resetView = () => {
+      setScale(1);
+      setPosition({ x: 0, y: 0 });
+    };
+
+    useEffect(() => {
+      if (isDragging) {
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return () => {
+          document.removeEventListener('mousemove', handleMouseMove);
+          document.removeEventListener('mouseup', handleMouseUp);
+        };
+      }
+    }, [isDragging, dragStart]);
+
+    return (
+      <div className="relative w-full h-[500px] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 animate-in fade-in slide-in-from-right duration-500">
+        {/* Controls */}
+        <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 animate-in fade-in slide-in-from-top duration-300">
+          <button
+            onClick={() => setScale(s => Math.min(s + 0.2, 3))}
+            className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 text-sm font-medium transform hover:scale-110 active:scale-95"
+            title="Zoom In"
+          >
+            🔍 +
+          </button>
+          <button
+            onClick={() => setScale(s => Math.max(s - 0.2, 0.5))}
+            className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 text-sm font-medium transform hover:scale-110 active:scale-95"
+            title="Zoom Out"
+          >
+            🔍 −
+          </button>
+          <button
+            onClick={resetView}
+            className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 text-sm font-medium transform hover:scale-110 active:scale-95"
+            title="Reset View"
+          >
+            ↺
+          </button>
+          <div className="px-2 py-1 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg shadow-md text-xs text-center">
+            {Math.round(scale * 100)}%
+          </div>
+        </div>
+
+        {/* Mindmap Container */}
+        <div
+          ref={containerRef}
+          className={`w-full h-full flex items-center justify-center p-8 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+        >
+          <div
+            className="mermaid-container transition-transform duration-100 ease-out"
+            style={{
+              transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+            }}
+            dangerouslySetInnerHTML={{ __html: svgContent }}
+          />
+        </div>
+
+        {/* Instructions */}
+        <div className="absolute bottom-4 left-4 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow-md border border-gray-200 dark:border-gray-600 animate-in fade-in slide-in-from-bottom duration-300">
+          <div className="flex items-center space-x-4">
+            <span>🖱️ Drag to move</span>
+            <span>📜 Scroll to zoom</span>
+            <span>↺ Click reset to center</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const handleExtractPageContent = async () => {
     try {
@@ -1430,6 +1617,94 @@ const SidePanel = () => {
       setIsAIGenerating(false);
     }
   };
+
+  const generateMindmap = async () => {
+    setIsGeneratingMindmap(true);
+    
+    try {
+      const contentPreview = result.substring(0, 2000);
+      
+      const prompt = `Create a Mermaid mindmap diagram based on this content. Follow these rules EXACTLY:
+
+      Content to analyze:
+      ${contentPreview}
+
+      CRITICAL FORMATTING RULES:
+      1. Start with "mindmap" on the first line
+      2. The root node MUST use double parentheses: root((Main Topic))
+      3. Use proper indentation (2 or 4 spaces per level)
+      4. Keep node labels SHORT (3-6 words maximum)
+      5. Maximum 3 levels deep (root → main branches → sub-branches)
+      6. Include 3-5 main branches
+      7. Each main branch should have 2-4 sub-branches
+
+      OUTPUT FORMAT (follow this structure):
+      mindmap
+        root((Central Idea))
+          Main Branch 1
+            Detail 1.1
+            Detail 1.2
+          Main Branch 2
+            Detail 2.1
+            Detail 2.2
+          Main Branch 3
+            Detail 3.1
+            Detail 3.2
+
+      IMPORTANT: 
+      - Output ONLY the mindmap code
+      - NO explanations before or after
+      - NO markdown code blocks
+      - NO extra text
+      - Start directly with "mindmap"`;
+
+      let response;
+      if (deepExplain) {
+        const result_ai = await gemini_model.generateContent(prompt);
+        response = await result_ai.response.text();
+      } else {
+        const session = await LanguageModel.create();
+        response = await session.prompt(prompt);
+        session.destroy();
+      }
+      
+      let cleanedMindmap = response
+        .replace(/```mermaid\n?/g, "")
+        .replace(/```\n?/g, "")
+        .replace(/^[^m]*mindmap/i, 'mindmap')
+        .trim();
+      
+      if (!cleanedMindmap.toLowerCase().startsWith('mindmap')) {
+        cleanedMindmap = 'mindmap\n  root((Main Topic))\n' + cleanedMindmap;
+      }
+      
+      console.log('Generated mindmap:', cleanedMindmap);
+      setMindmapData(cleanedMindmap);
+      setShowMindmap(true);
+      
+    } catch (error) {
+      console.error('Mindmap generation error:', error);
+      showToast("❌ Failed to generate mindmap");
+      
+      const fallbackMindmap = `mindmap
+      root((${activeTab === 'summarize' ? 'Summary' : activeTab === 'explain' ? 'Explanation' : 'Content'}))
+        Key Point 1
+          Detail A
+          Detail B
+        Key Point 2
+          Detail C
+          Detail D
+        Key Point 3
+          Detail E
+          Detail F`;
+      
+      setMindmapData(fallbackMindmap);
+      setShowMindmap(true);
+    } finally {
+      setIsGeneratingMindmap(false);
+    }
+  };
+    
 
   // Drag and Drop handlers
   // const handleDragEnter = (e) => {
@@ -3129,15 +3404,79 @@ const SidePanel = () => {
         {/* Results with Animation */}
         {activeTab !== 'chat' && result && !isLoading && !result.includes('❌') && !result.includes('cancelled') && (
           <div className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h3 className="font-medium text-gray-900 dark:text-white mb-3">Result</h3>
-            <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm">
-              <div
-                className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(marked(result)),
-                }}
-              />
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium text-gray-900 dark:text-white">Result</h3>
+              
+              {(activeTab === 'summarize' || activeTab === 'explain') && (
+                <div className="relative inline-flex items-center bg-gray-200 dark:bg-gray-700 rounded-full p-1 shadow-inner">
+                  <div 
+                    className={`absolute top-1 bottom-1 bg-white dark:bg-gray-600 rounded-full shadow-md transition-all duration-300 ease-out ${
+                      showMindmap ? 'left-[40%] right-1' : 'left-1 right-[60%]'
+                    }`}
+                  />
+                  
+                  <button
+                    onClick={() => setShowMindmap(false)}
+                    disabled={isGeneratingMindmap}
+                    className={`relative z-10 px-4 py-2 rounded-full text-xs font-medium transition-all duration-300 ${
+                      !showMindmap 
+                        ? 'text-gray-900 dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    📝 Text
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!mindmapData) {
+                        generateMindmap();
+                      } else {
+                        setShowMindmap(true);
+                      }
+                    }}
+                    disabled={isGeneratingMindmap}
+                    className={`relative z-10 px-4 py-2 rounded-full text-xs font-medium transition-all duration-300 flex items-center space-x-1 ${
+                      showMindmap 
+                        ? 'text-gray-900 dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300'
+                    } ${isGeneratingMindmap ? 'opacity-50' : ''}`}
+                  >
+                    {isGeneratingMindmap ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        <span>Generating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🧠</span>
+                        <span>Mindmap</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
+
+            <div className="relative overflow-hidden">
+              {(!showMindmap || (activeTab !== 'summarize' && activeTab !== 'explain')) ? (
+                <div 
+                  key="text-view"
+                  className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm animate-in fade-in slide-in-from-left duration-300"
+                >
+                  <div
+                    className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
+                    dangerouslySetInnerHTML={{
+                      __html: DOMPurify.sanitize(marked(result)),
+                    }}
+                  />
+                </div>
+              ) : (
+                <div key="mindmap-view">
+                  <MindmapViewer mermaidCode={mindmapData} />
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center gap-2 mt-3">
               {(activeTab === 'summarize' || activeTab === 'explain') && (
                 <>
@@ -3213,7 +3552,6 @@ const SidePanel = () => {
               <div className={`mt-3 p-6 border rounded-xl bg-white dark:bg-gray-800 shadow-lg transition-all duration-300 ${
                 showAIGlow ? 'border-transparent animate-ai-glow' : 'border-gray-200 dark:border-gray-600'
               }`}>
-                {/* Header with AI Button */}
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center space-x-2">
                     <p className="font-semibold text-lg mb-3 text-black dark:text-white">💾 Save Notes</p>
@@ -3244,7 +3582,6 @@ const SidePanel = () => {
                   </button>
                 </div>
 
-                {/* Title Field */}
                 <div className="mb-4">
                   <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     <span>Title</span>
@@ -3367,7 +3704,7 @@ const SidePanel = () => {
                   Add to Reading Later
                 </label>
 
-                <div className="flex gap-2 mt-4">
+                <div className="flex gap-2 mt-6">
                   <button
                     onClick={confirmSave}
                     disabled={!title.trim()}
@@ -3598,6 +3935,72 @@ const SidePanel = () => {
 
         .animate-ai-glow {
           animation: ai-glow 2s ease-in-out;
+        }
+
+        .mermaid-container {
+          user-select: none;
+        }
+
+        .mermaid {
+          display: inline-block;
+          min-width: 300px;
+        }
+
+        .cursor-grab {
+          cursor: grab;
+        }
+
+        .cursor-grabbing {
+          cursor: grabbing;
+        }
+
+        @keyframes slide-in-from-left {
+          from { 
+            opacity: 0;
+            transform: translateX(-20px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        @keyframes slide-in-from-right {
+          from { 
+            opacity: 0;
+            transform: translateX(20px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        .slide-in-from-left {
+          animation-name: slide-in-from-left;
+        }
+
+        .slide-in-from-right {
+          animation-name: slide-in-from-right;
+        }
+
+        .mermaid-container {
+          user-select: none;
+          will-change: transform;
+        }
+
+        .mermaid-container svg {
+          max-width: none !important;
+          height: auto !important;
+        }
+
+        /* Mermaid mindmap styling */
+        .mermaid-container .mindmap-node {
+          transition: all 0.2s ease;
+        }
+
+        .mermaid-container .mindmap-node:hover {
+          filter: brightness(1.1);
         }
       `}</style>
     </div>
