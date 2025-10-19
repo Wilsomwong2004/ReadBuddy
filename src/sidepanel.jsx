@@ -48,6 +48,9 @@ const SidePanel = () => {
   const lastReadUrlRef = useRef('');
   const currentLoadIdRef = useRef(0);
   const [isTooltipTriggered, setIsTooltipTriggered] = useState(false);
+  const [isAIGenerating, setIsAIGenerating] = useState(false);
+  const [showAIGlow, setShowAIGlow] = useState(false);
+  const [canExtractPage, setCanExtractPage] = useState(true);
 
   const [processingQueue, setProcessingQueue] = useState([]);
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
@@ -71,6 +74,25 @@ const SidePanel = () => {
     worker: chrome.runtime.getURL('lib/pdf.worker.mjs')
   };
 
+  const isExtractableUrl = (url) => {
+    if (!url) return false;
+
+    const nonExtractablePatterns = [
+      /^chrome:\/\//,
+      /^chrome-extension:\/\//,
+      /^about:/,
+      /^edge:\/\//,
+      /^brave:\/\//,
+      /^opera:\/\//,
+      /^vivaldi:\/\//,
+      /^data:/,
+      /^blob:/,
+      /^javascript:/
+    ];
+    
+    return !nonExtractablePatterns.some(pattern => pattern.test(url));
+  };
+
   const [apiSupport, setApiSupport] = useState({
     summarizer: false,
     translator: false,
@@ -90,10 +112,21 @@ const SidePanel = () => {
 
     const initializePageRead = async () => {
       try {
+        if (typeof chrome !== 'undefined' && chrome.tabs) {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (!isExtractableUrl(tab?.url)) {
+            console.log('⚠️ Non-extractable URL detected:', tab?.url);
+            setCanExtractPage(false);
+            return;
+          }
+          setCanExtractPage(true);
+        }
+
         console.log('🚀 Auto-reading page on app open');
         await checkAndLoadPageContext(false);
       } catch (error) {
         console.log('⚠️ Cannot read this page, ignoring:', error.message);
+        setCanExtractPage(false);
       }
     };
     
@@ -203,17 +236,38 @@ const SidePanel = () => {
       setResult('');
     }
 
-    checkAndLoadPageContext();
+    const checkUrl = async () => {
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!isExtractableUrl(tab?.url)) {
+          setCanExtractPage(false);
+          return;
+        }
+      }
+      setCanExtractPage(true);
+      checkAndLoadPageContext();
+    };
+    
+    checkUrl();
   }, [activeTab]);
 
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.tabs) {
       const handleActivated = async (activeInfo) => {
         console.log('🔄 Tab switched, checking if need to read new page...');
+
         try {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (!isExtractableUrl(tab?.url)) {
+            console.log('⚠️ Non-extractable URL detected:', tab?.url);
+            setCanExtractPage(false);
+            return;
+          }
+          setCanExtractPage(true);
           await checkAndLoadPageContext(false);
         } catch (error) {
           console.log('⚠️ Cannot read this page, ignoring:', error.message);
+          setCanExtractPage(false);
         }
       };
 
@@ -703,6 +757,7 @@ const SidePanel = () => {
               setPageMetadata(pdfContent.metadata);
             }
             setIsLoading(false);
+            setCanExtractPage(true); 
             return pdfContent;
           }
         }
@@ -721,6 +776,7 @@ const SidePanel = () => {
             }
             
             setIsLoading(false);
+            setCanExtractPage(true);
             return { content, metadata };
           }
         }
@@ -751,11 +807,13 @@ const SidePanel = () => {
           });
 
           setIsLoading(false);
+          setCanExtractPage(true); 
           return { content, metadata };
         }
       }
     } catch (error) {
       console.error('❌ Error extracting page content:', error);
+      setCanExtractPage(false);
       if (!forChatOnly) {
         setResult(`❌ Failed to extract: ${error.message}`);
       }
@@ -1152,6 +1210,13 @@ const SidePanel = () => {
       if (!tab || !tab.url) return;
       const url = tab.url;
 
+      if (!isExtractableUrl(url)) {
+        console.log('⚠️ Skipping non-extractable URL:', url);
+        setCanExtractPage(false);
+        return;
+      }
+      setCanExtractPage(true);
+
       console.log('🔍 Checking page context for:', url, 'Prioritize:', prioritize);
 
       setCurrentPageUrl(url);
@@ -1315,6 +1380,55 @@ const SidePanel = () => {
     isProcessingQueueRef.current = false;
     setIsProcessingQueue(false);
     console.log('✅ Queue processing complete');
+  };
+
+  const generateTitleAndTags = async () => {
+    setIsAIGenerating(true);
+    setShowAIGlow(true);
+    
+    try {
+      const contextText = `
+        Selected Text: ${selectedText.substring(0, 500)}
+        
+        Result/Summary: ${result.substring(0, 500)}
+      `;
+      
+      const prompt = `Based on the following content, generate a concise, descriptive title (max 60 characters) and 3-5 relevant tags.
+
+        ${contextText}
+
+        Respond in this exact JSON format:
+        {
+          "title": "Your Generated Title Here",
+          "tags": ["tag1", "tag2", "tag3"]
+        }
+
+        Keep the title clear and informative. Tags should be single words or short phrases that categorize the content.`;
+
+      const result_ai = await gemini_model.generateContent(prompt);
+      const responseText = await result_ai.response.text();
+      
+      let cleanedResponse = responseText
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      
+      const parsed = JSON.parse(cleanedResponse);
+      
+      setTitle(parsed.title || "");
+      setCategories(parsed.tags || []);
+      
+      setTimeout(() => {
+        setShowAIGlow(false);
+      }, 2000);
+      
+    } catch (error) {
+      console.error("AI generation error:", error);
+      showToast("❌ Failed to generate title and tags");
+      setShowAIGlow(false);
+    } finally {
+      setIsAIGenerating(false);
+    }
   };
 
   // Drag and Drop handlers
@@ -2166,6 +2280,12 @@ const SidePanel = () => {
 
   const extractPageContentForUrl = async (url, tabId = null) => {
     try {
+      if (!isExtractableUrl(url)) {
+        console.log('⚠️ Cannot extract from this URL type:', url);
+        setCanExtractPage(false);
+        return null;
+      }
+
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         let targetTabId = tabId;
         let currentTab = null;
@@ -2953,7 +3073,7 @@ const SidePanel = () => {
                 </span>
               )}
 
-              {['summarize', 'translate', 'explain'].includes(activeTab) && !selectedText.trim() && (
+              {['summarize', 'translate', 'explain'].includes(activeTab) && !selectedText.trim() && canExtractPage && ( // ✅ Add canExtractPage condition
                 <button
                   onClick={handleExtractPageContent}
                   className="absolute top-[-3.5] right-2 px-3 py-1 bg-blue-500 text-white text-xs rounded-md hover:bg-blue-600 transition-colors"
@@ -3090,20 +3210,57 @@ const SidePanel = () => {
             )}
 
             {activePanel === "save" && (
-              <div className="mt-3 p-4 border border-gray-200 dark:border-gray-600 shadow-sm rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 animate-in fade-in slide-in-from-top-2 duration-300">
-                <p className="font-semibold text-lg mb-3 text-black dark:text-white">💾 Save Notes</p>
+              <div className={`mt-3 p-6 border rounded-xl bg-white dark:bg-gray-800 shadow-lg transition-all duration-300 ${
+                showAIGlow ? 'border-transparent animate-ai-glow' : 'border-gray-200 dark:border-gray-600'
+              }`}>
+                {/* Header with AI Button */}
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center space-x-2">
+                    <p className="font-semibold text-lg mb-3 text-black dark:text-white">💾 Save Notes</p>
+                  </div>
+                  
+                  <button
+                    onClick={generateTitleAndTags}
+                    disabled={isAIGenerating || !selectedText.trim() || !result.trim()}
+                    className={`group relative px-4 mb-3 rounded-lg font-medium text-sm transition-all duration-300 transform hover:scale-105 active:scale-95 ${
+                      isAIGenerating 
+                        ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white cursor-wait' 
+                        : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100'
+                    }`}
+                  >
+                    <span className="flex items-center space-x-2">
+                      {isAIGenerating ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Generating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-lg">✨</span>
+                          <span>AI Assist</span>
+                        </>
+                      )}
+                    </span>
+                  </button>
+                </div>
 
-                {/* Title */}
-                <label className="block text-sm mb-1 text-black dark:text-white">
-                  Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Enter a title..."
-                  className="w-full px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white mb-3"
-                />
+                {/* Title Field */}
+                <div className="mb-4">
+                  <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <span>Title</span>
+                    <span className="ml-1 text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Enter a descriptive title..."
+                    className={`w-full px-4 py-2 text-sm border rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 transition-all duration-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      showAIGlow ? 'border-blue-400 dark:border-blue-500' : 'border-gray-300 dark:border-gray-600'
+                    }`}
+                  />
+                </div>
+
 
                 {/* NoteSpace */}
                 {/* <label className="block text-sm mb-1 text-black dark:text-white">
@@ -3134,17 +3291,26 @@ const SidePanel = () => {
                   </button>
                 </div> */}
 
-                <label className="block text-sm mb-1 text-black dark:text-white">
-                  Tags
-                </label>
-                <div className="mt-2 flex flex-col gap-2">
-                  <div className="flex gap-2">
+                {/* Tags Field */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Tags
+                  </label>
+                  <div className="flex gap-2 mb-2">
                     <input
                       type="text"
                       value={newCategory}
                       onChange={(e) => setNewCategory(e.target.value)}
-                      placeholder="Enter a tag..."
-                      className="flex-1 px-2 py-1 text-sm border rounded-md bg-white dark:bg-gray-800 text-black dark:text-white"
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && newCategory.trim()) {
+                          setCategories([...categories, newCategory.trim()]);
+                          setNewCategory("");
+                        }
+                      }}
+                      placeholder="Add a tag..."
+                      className={`flex-1 px-4 py-2 text-sm border rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 transition-all duration-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        showAIGlow ? 'border-blue-400 dark:border-blue-500' : 'border-gray-300 dark:border-gray-600'
+                      }`}
                     />
                     <button
                       onClick={() => {
@@ -3153,25 +3319,35 @@ const SidePanel = () => {
                           setNewCategory("");
                         }
                       }}
-                      className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all duration-200 transform hover:scale-105 active:scale-95"
+                      className="px-6 py-1 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all duration-200 transform hover:scale-105 active:scale-95 font-medium"
                     >
                       Add
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map((cat, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2 py-1 text-xs bg-gray-300 dark:bg-gray-700 text-black dark:text-white rounded-full animate-in fade-in duration-200"
-                      >
-                        {cat}
-                      </span>
-                    ))}
-                  </div>
+                  
+                  {/* Tags Display */}
+                  {categories.length > 0 && (
+                    <div className="flex flex-wrap gap-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                      {categories.map((cat, idx) => (
+                        <span
+                          key={idx}
+                          className="group relative px-3 py-1.5 text-xs bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full font-medium flex items-center space-x-2 animate-in fade-in duration-200"
+                        >
+                          <span>{cat}</span>
+                          <button
+                            onClick={() => setCategories(categories.filter((_, i) => i !== idx))}
+                            className="ml-1 hover:text-red-200 transition-colors"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Favorite */}
-                <label className="block text-sm mt-3 mb-1 text-black dark:text-white cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200">
+                <label className="block text-sm mt-4 mb-1 text-black dark:text-white cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200">
                   <input
                     type="checkbox"
                     checked={favorite}
@@ -3181,7 +3357,7 @@ const SidePanel = () => {
                   Mark as Favorite
                 </label>
 
-                <label className="block text-sm mt-2 mb-1 text-black dark:text-white cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200">
+                <label className="block text-sm mt-2 mb-3 text-black dark:text-white cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200">
                   <input
                     type="checkbox"
                     checked={readingLater}
@@ -3391,6 +3567,37 @@ const SidePanel = () => {
         
         .slide-in-from-top-2 {
           animation-name: slide-in-from-top-2;
+        }
+
+        @keyframes ai-glow {
+          0%, 100% {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5),
+                        0 0 40px rgba(147, 51, 234, 0.3),
+                        0 0 60px rgba(236, 72, 153, 0.2);
+            border-color: rgb(59, 130, 246);
+          }
+          25% {
+            box-shadow: 0 0 25px rgba(147, 51, 234, 0.5),
+                        0 0 45px rgba(236, 72, 153, 0.3),
+                        0 0 65px rgba(59, 130, 246, 0.2);
+            border-color: rgb(147, 51, 234);
+          }
+          50% {
+            box-shadow: 0 0 30px rgba(236, 72, 153, 0.5),
+                        0 0 50px rgba(59, 130, 246, 0.3),
+                        0 0 70px rgba(147, 51, 234, 0.2);
+            border-color: rgb(236, 72, 153);
+          }
+          75% {
+            box-shadow: 0 0 25px rgba(147, 51, 234, 0.5),
+                        0 0 45px rgba(236, 72, 153, 0.3),
+                        0 0 65px rgba(59, 130, 246, 0.2);
+            border-color: rgb(147, 51, 234);
+          }
+        }
+
+        .animate-ai-glow {
+          animation: ai-glow 2s ease-in-out;
         }
       `}</style>
     </div>
