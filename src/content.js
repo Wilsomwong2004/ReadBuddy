@@ -9,16 +9,43 @@ let scrollTimeout = null;
 let isScrolling = false;
 let pendingSelection = null;
 
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 3;
+
 // Check if extension context is valid
 function isExtensionContextValid() {
   try {
     const valid = chrome.runtime && chrome.runtime.id;
     extensionContextValid = valid;
+    
+    if (!valid && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      console.log('[Content] Extension context invalid, attempting reconnection...');
+      reconnectAttempts++;
+      setTimeout(() => {
+        // Try to reinitialize
+        if (chrome.runtime && chrome.runtime.id) {
+          console.log('[Content] Reconnection successful!');
+          extensionContextValid = true;
+          reconnectAttempts = 0;
+          initializeExtension();
+        }
+      }, 500);
+    }
+    
     return valid;
   } catch (e) {
     extensionContextValid = false;
     return false;
   }
+}
+
+async function ensureContentScriptReady() {
+  if (!isExtensionContextValid()) {
+    console.log('[Content] Extension context lost, requesting page reload hint...');
+    showExtensionReloadNotification();
+    return false;
+  }
+  return true;
 }
 
 // Safe chrome.runtime.sendMessage with context check
@@ -199,14 +226,11 @@ if (isExtensionContextValid()) {
   });
 }
 
-// Text selection handler
-document.addEventListener('mouseup', (e) => {
-  // Don't show tooltip if extension context is invalid
-  if (!isExtensionContextValid()) {
+document.addEventListener('mouseup', async (e) => {
+  if (!await ensureContentScriptReady()) {
     return;
   }
 
-  // Don't recreate tooltip if clicking on the tooltip itself
   const tooltip = document.getElementById('readbuddy-tooltip');
   if (tooltip && tooltip.contains(e.target)) {
     console.log('[Content] Click on tooltip, ignoring mouseup');
@@ -522,5 +546,15 @@ document.addEventListener('keydown', (e) => {
     hideQuickActions();
   }
 });
+
+window.readBuddyInjected = true;
+
+console.log('[Content] ReadBuddy extension loaded successfully!');
+
+if (isExtensionContextValid()) {
+  safeSendMessage({ type: 'content-script-ready' }, (response) => {
+    console.log('[Content] Connection confirmed with background');
+  });
+}
 
 console.log('[Content] ReadBuddy extension loaded successfully!');

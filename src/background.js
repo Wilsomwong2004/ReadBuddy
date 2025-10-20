@@ -114,4 +114,75 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
+// Listen for extension installation/update
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details.reason === 'install') {
+    console.log('[Background] Extension installed, injecting content scripts...');
+    await injectContentScriptsToAllTabs();
+  } else if (details.reason === 'update') {
+    console.log('[Background] Extension updated, re-injecting content scripts...');
+    await injectContentScriptsToAllTabs();
+  }
+});
+
+// Function to inject content scripts to all existing tabs
+async function injectContentScriptsToAllTabs() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    
+    for (const tab of tabs) {
+      // Skip chrome:// and other protected URLs
+      if (tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://')) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content.js']
+          });
+          
+          await chrome.scripting.insertCSS({
+            target: { tabId: tab.id },
+            files: ['content.css']
+          });
+          
+          console.log(`[Background] Injected content script into tab ${tab.id}`);
+        } catch (error) {
+          console.log(`[Background] Could not inject into tab ${tab.id}:`, error.message);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Background] Error injecting content scripts:', error);
+  }
+}
+
+// Also re-inject when tab is updated (navigated)
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url && 
+      !tab.url.startsWith('chrome://') && 
+      !tab.url.startsWith('chrome-extension://')) {
+    try {
+      // Check if content script is already injected
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        func: () => !!window.readBuddyInjected
+      });
+      
+      if (!results || !results[0]?.result) {
+        console.log(`[Background] Re-injecting content script into tab ${tabId}`);
+        
+        await chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          files: ['content.js']
+        });
+        
+        await chrome.scripting.insertCSS({
+          target: { tabId: tabId },
+          files: ['content.css']
+        });
+      }
+    } catch (error) {
+      console.log(`[Background] Could not check/inject into tab ${tabId}:`, error.message);
+    }
+  }
+});
 

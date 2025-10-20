@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import { Settings, Save, Info, Download, CircleAlert } from 'lucide-react';
+import { Settings, Save, Info, Download, CircleAlert, ClipboardCopy } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
@@ -70,6 +70,12 @@ const SidePanel = () => {
   const [isAIGenerating, setIsAIGenerating] = useState(false);
   const [showAIGlow, setShowAIGlow] = useState(false);
   const [canExtractPage, setCanExtractPage] = useState(true);
+
+  const [translateResults, setTranslateResults] = useState([]);
+  const [currentTranslateIndex, setCurrentTranslateIndex] = useState(0);
+  const [showAddLanguage, setShowAddLanguage] = useState(false);
+  const [newTranslateTo, setNewTranslateTo] = useState('es'); 
+  const [originalTextForTranslation, setOriginalTextForTranslation] = useState('');
 
   const [showMindmap, setShowMindmap] = useState(false);
   const [mindmapData, setMindmapData] = useState('');
@@ -635,7 +641,7 @@ const SidePanel = () => {
   // };
 
   const MindmapViewer = ({ mermaidCode }) => {
-    const [scale, setScale] = useState(1);
+    const [scale, setScale] = useState(1.2);
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -756,12 +762,10 @@ const SidePanel = () => {
         const url = URL.createObjectURL(svgBlob);
         
         img.onload = () => {
-          // Higher resolution for better quality
           const scale = 3;
           canvas.width = (bbox.width + padding * 2) * scale;
           canvas.height = (bbox.height + padding * 2) * scale;
           
-          // Fill with background color
           ctx.fillStyle = isDarkMode ? '#1f2937' : '#ffffff';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           
@@ -863,7 +867,7 @@ const SidePanel = () => {
     };
 
     const resetView = () => {
-      setScale(1);
+      setScale(1.2);
       setPosition({ x: 0, y: 0 });
     };
 
@@ -896,7 +900,10 @@ const SidePanel = () => {
 
     return (
       <div className="relative w-full h-[500px] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
-        <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+        <div className="absolute top-4 right-4 z-10 flex gap-2">
+          <div className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg shadow-md text-xs text-center">
+            {Math.round(scale * 100)}%
+          </div>
           <button
             onClick={() => setScale(s => Math.min(s + 0.2, 3))}
             className="px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all text-sm font-medium"
@@ -915,16 +922,19 @@ const SidePanel = () => {
           >
             ↻
           </button>
-          <div className="px-2 py-1 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg shadow-md text-xs text-center">
-            {Math.round(scale * 100)}%
-          </div>
         </div>
 
-        {/* Settings Button */}
         <div className="absolute bottom-4 right-4 z-10">
           <button
+            onClick={copyMindmap}
+            className="p-2 mr-2 cursor-pointer bg-white dark:bg-gray-800 dark:hover:bg-gray-400 hover:bg-gray-400 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all"
+          >
+            <ClipboardCopy className="w-4 h-4" />
+          </button>
+
+          <button
             onClick={() => setShowSettings(!showSettings)}
-            className="p-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all"
+            className="p-2 bg-white cursor-pointer  dark:bg-gray-800 dark:hover:bg-gray-400 hover:bg-gray-400  text-gray-700  dark:text-gray-300 rounded-lg shadow-md hover:shadow-lg transition-all"
           >
             <Settings className="w-4 h-4" />
           </button>
@@ -1069,7 +1079,9 @@ const SidePanel = () => {
         id: Date.now(),
         title: title.trim(),
         text: selectedText,
-        result: result,
+        result: activeTab === 'translate' && translateResults.length > 0 
+          ? translateResults.map(t => t.result).join('\n\n---\n\n')
+          : result,
         url: url,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
         tags: categories,
@@ -1077,6 +1089,9 @@ const SidePanel = () => {
         readingLater: readingLater,
         category: activeTab,
         date: new Date().toISOString().split('T')[0],
+      ...(activeTab === 'translate' && translateResults.length > 0 && {
+        translations: translateResults
+      })
       };
 
       chrome.storage.local.get(['savedItems'], function (data) {
@@ -2491,6 +2506,57 @@ const SidePanel = () => {
     }
   };
 
+  const handleAddTranslation = async () => {
+    if (translateResults.length >= 5) {
+      showToast('⚠️ Maximum 5 translations reached');
+      return;
+    }
+
+    if (translateResults.some(t => t.targetLang === newTranslateTo)) {
+      showToast('⚠️ This language already translated');
+      return;
+    }
+
+    if (!newTranslateTo || newTranslateTo === 'auto') {
+      showToast('⚠️ Please select a valid target language');
+      return;
+    }
+
+    setIsLoading(true);
+    setShowAddLanguage(false);
+
+    try {
+      const textToTranslate = originalTextForTranslation || selectedText;
+      
+      console.log('🌍 Adding translation to:', newTranslateTo);
+      console.log('📝 Text length:', textToTranslate.length);
+      
+      const translation = await translateText(textToTranslate, newTranslateTo);
+      
+      setTranslateResults(prev => [...prev, {
+        targetLang: newTranslateTo,
+        result: translation
+      }]);
+      
+      setCurrentTranslateIndex(translateResults.length);
+      showToast('✅ Translation added!');
+      
+      const availableLanguages = languages.filter(
+        l => l.code !== 'auto' && 
+        !translateResults.some(t => t.targetLang === l.code) && 
+        l.code !== newTranslateTo
+      );
+      if (availableLanguages.length > 0) {
+        setNewTranslateTo(availableLanguages[0].code);
+      }
+    } catch (error) {
+      console.error('Translation error:', error);
+      showToast('❌ Translation failed: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const explainText = async (text, useDeepExplain) => {    
     if (useDeepExplain) {
       const prompt = `
@@ -3235,7 +3301,13 @@ const SidePanel = () => {
           processedResult = await summarizeText(text);
           break;
         case 'translate':
+          setOriginalTextForTranslation(text);
           processedResult = await translateText(text, translateFrom, translateTo);
+          setTranslateResults([{
+            targetLang: translateTo,
+            result: processedResult
+          }]);
+          setCurrentTranslateIndex(0);
           break; 
         case 'explain':
           processedResult = await explainText(text, deepExplain);
@@ -3314,10 +3386,6 @@ const SidePanel = () => {
                 </select>
               </div>
             </div>
-
-            {/* <div className={`text-xs p-2 rounded ${apiSupport.translator ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
-              {apiSupport.translator ? '✅ Using Chrome Translator API' : '⚠️ Using fallback translation'}
-            </div> */}
           </div>
         );
       
@@ -3445,7 +3513,7 @@ const SidePanel = () => {
       
       case 'chat':
         return (
-          <div className="flex flex-col h-[680px] overflow-y-hidden space-y-4 pb-0">
+          <div className="flex flex-col h-[700px] overflow-y-hidden space-y-4 pb-0">
             <div className="flex items-center justify-between rounded-lg">
               <h3 className="font-medium text-gray-900 dark:text-white flex items-center space-x-2">
                 <span>Readbuddy AI Assistant</span>
@@ -3787,6 +3855,43 @@ const SidePanel = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-medium text-gray-900 dark:text-white">Result</h3>
               
+              {/* Translate navigation controls */}
+              {activeTab === 'translate' && (
+                <div className="flex items-center gap-2">
+                  {translateResults.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => setCurrentTranslateIndex(prev => Math.max(0, prev - 1))}
+                        disabled={currentTranslateIndex === 0}
+                        className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                      >
+                        ←
+                      </button>
+                      <span className="text-xs text-gray-600 dark:text-gray-400">
+                        {currentTranslateIndex + 1} / {translateResults.length}
+                      </span>
+                      <button
+                        onClick={() => setCurrentTranslateIndex(prev => Math.min(translateResults.length - 1, prev + 1))}
+                        disabled={currentTranslateIndex === translateResults.length - 1}
+                        className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                      >
+                        →
+                      </button>
+                    </>
+                  )}
+                  
+                  {translateResults.length < 5 && (
+                    <button
+                      onClick={() => setShowAddLanguage(true)}
+                      className="px-4 py-2 rounded-lg cursor-pointer bg-green-500 text-white hover:bg-green-600 transition-all duration-200 transform hover:scale-105"
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Mindmap toggle for summarize/explain */}
               {(activeTab === 'summarize' || activeTab === 'explain') && (
                 <div className="relative inline-flex items-center bg-gray-200 dark:bg-gray-700 rounded-full p-1 shadow-inner">
                   <div 
@@ -3810,7 +3915,7 @@ const SidePanel = () => {
                         : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300'
                     }`}
                   >
-                    📝 Text
+                    📄 Text
                   </button>
                   <button
                     onClick={() => {
@@ -3847,8 +3952,60 @@ const SidePanel = () => {
               )}
             </div>
 
+            {/* Add language popup for translate */}
+            {activeTab === 'translate' && showAddLanguage && (
+              <div className="mb-4 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg animate-in fade-in slide-in-from-top-2 duration-200">
+                <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Add Another Language</h4>
+                <select
+                  value={newTranslateTo}
+                  onChange={(e) => {
+                    const selectedLang = e.target.value;
+                    console.log('Selected new language:', selectedLang);
+                    setNewTranslateTo(selectedLang);
+                  }}
+                  className="w-full p-2 mb-3 border border-gray-300 rounded-lg bg-white text-sm dark:text-white dark:bg-gray-900 dark:border-gray-600"
+                >
+                  {languages
+                    .filter(l => l.code !== 'auto' && !translateResults.some(t => t.targetLang === l.code))
+                    .map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.flag} {lang.name}
+                      </option>
+                    ))}
+                </select>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleAddTranslation}
+                    disabled={isLoading}
+                    className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isLoading ? 'Translating...' : 'Translate'}
+                  </button>
+                  <button
+                    onClick={() => setShowAddLanguage(false)}
+                    className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-all duration-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Results display */}
             <div className="relative overflow-hidden">
-              {(!showMindmap || (activeTab !== 'summarize' && activeTab !== 'explain')) ? (
+              {activeTab === 'translate' ? (
+                <div 
+                  key={currentTranslateIndex}
+                  className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm animate-in fade-in slide-in-from-right duration-300"
+                >
+                  <div
+                    className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
+                    dangerouslySetInnerHTML={{
+                      __html: DOMPurify.sanitize(marked(translateResults[currentTranslateIndex]?.result || result)),
+                    }}
+                  />
+                </div>
+              ) : (!showMindmap || (activeTab !== 'summarize' && activeTab !== 'explain')) ? (
                 <div 
                   key="text-view"
                   className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm animate-in fade-in slide-in-from-left duration-300"
@@ -3867,6 +4024,7 @@ const SidePanel = () => {
               )}
             </div>
 
+            {/* Action buttons */}
             <div className="flex items-center gap-2 mt-3">
               {(activeTab === 'summarize' || activeTab === 'explain') && (
                 <>
@@ -4134,14 +4292,14 @@ const SidePanel = () => {
                   </div>
                 )}
 
-                <div className="flex gap-2 mt-6 text-black dark:text-white">
+                {/* <div className="flex gap-2 mt-6 text-black dark:text-white">
                   <button className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all duration-200 transform hover:scale-105 active:scale-95">
                     Explore More
                   </button>
                   <button className="px-3 py-1 text-xs bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-all duration-200 transform hover:scale-105 active:scale-95">
                     Add to Learning Path
                   </button>
-                </div>
+                </div> */}
               </div>
             )}
 
@@ -4408,6 +4566,21 @@ const SidePanel = () => {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+        }
+
+        @keyframes slide-in-from-right {
+          from { 
+            opacity: 0;
+            transform: translateX(20px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        .slide-in-from-right {
+          animation-name: slide-in-from-right;
         }
       `}</style>
     </div>
