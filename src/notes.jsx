@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
@@ -13,6 +13,75 @@ const ReadBuddyNotesPage = () => {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [viewMode, setViewMode] = useState('list');
   const [expandedItems, setExpandedItems] = useState(new Set());
+  const [showMindmap, setShowMindmap] = useState({});
+  const [currentTranslationIndex, setCurrentTranslationIndex] = useState({});
+
+  const MindmapViewer = ({ mermaidCode, isDarkMode }) => {
+    const [svgContent, setSvgContent] = useState('');
+    const [isLoading, setIsLoading] = useState(true);
+    const containerRef = useRef(null);
+
+    useEffect(() => {
+    const renderMermaid = async () => {
+    if (!mermaidCode || !mermaidCode.trim()) {
+      setIsLoading(false);
+      return;
+    }
+
+    let attempts = 0;
+      while (!window.mermaid && attempts < 100) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+
+      if (!window.mermaid) {
+        console.error('Mermaid failed to load');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        await window.mermaid.initialize({ 
+          startOnLoad: false,
+          theme: isDarkMode ? 'dark' : 'default',
+          mindmap: {
+            padding: 20,
+            useMaxWidth: true
+          },
+          securityLevel: 'loose'
+        });
+
+        const id = `mindmap-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const renderResult = await window.mermaid.render(id, mermaidCode);
+        const svg = renderResult.svg || renderResult;
+        
+        setSvgContent(svg);
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Render error:', error);
+        setIsLoading(false);
+      }
+    };
+
+      renderMermaid();
+    }, [mermaidCode, isDarkMode]);
+
+    if (isLoading) {
+      return (
+      <div className="w-full h-64 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
+      <p className="text-sm text-gray-600 dark:text-gray-400">Loading mindmap...</p>
+      </div>
+      );
+    }
+  return (
+    <div
+      ref={containerRef}
+      className="w-full bg-white dark:bg-gray-800 rounded-lg p-4 overflow-auto"
+      dangerouslySetInnerHTML={{ __html: svgContent }}
+    />
+    );
+  };
+
 
   useEffect(() => {
     chrome.storage.local.get(['savedItems'], (result) => {
@@ -50,6 +119,55 @@ const ReadBuddyNotesPage = () => {
       setActiveTab(tab);
     }
   }, []);
+
+  useEffect(() => {
+    const loadMermaid = async () => {
+    if (window.mermaid) return;
+      try {
+        const script = document.createElement('script');
+        script.src = chrome.runtime.getURL('lib/mermaid.min.js');
+        script.async = false;
+        
+        script.onload = () => {
+          if (window.mermaid) {
+            window.mermaid.initialize({ 
+              startOnLoad: false,
+              theme: isDarkMode ? 'dark' : 'default'
+            });
+            console.log('✅ Mermaid loaded for notes page');
+          }
+        };
+        
+        document.head.appendChild(script);
+      } catch (error) {
+        console.error('Failed to load Mermaid:', error);
+      }
+    };
+    loadMermaid();
+  }, [isDarkMode]);
+
+  const handleToggleMindmap = (id) => {
+    setShowMindmap(prev => ({
+    ...prev,
+    [id]: !prev[id]
+    }));
+  };
+
+  const handleNextTranslation = (id, translations) => {
+    setCurrentTranslationIndex(prev => {
+    const currentIndex = prev[id] || 0;
+    const nextIndex = (currentIndex + 1) % translations.length;
+    return { ...prev, [id]: nextIndex };
+    });
+  };
+
+  const handlePrevTranslation = (id, translations) => {
+    setCurrentTranslationIndex(prev => {
+    const currentIndex = prev[id] || 0;
+    const prevIndex = currentIndex === 0 ? translations.length - 1 : currentIndex - 1;
+    return { ...prev, [id]: prevIndex };
+    });
+  };
 
   const handleDeleteItem = (id) => {
     if (window.confirm("Are you sure you want to delete this item?")) {
@@ -538,13 +656,72 @@ const ReadBuddyNotesPage = () => {
                                     
                                     {item.result && (
                                       <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                                        <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-3 flex items-center gap-2">
-                                          <Star className="w-4 h-4" />
-                                          Result
-                                        </p>
-                                        <div className="text-gray-800 dark:text-gray-200 leading-relaxed text-sm space-y-1">
-                                          {formatResult(item.result)}
+                                        <div className="flex items-center justify-between mb-3">
+                                          <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                                            <Star className="w-4 h-4" />
+                                            Result
+                                          </p>
+                                          
+                                          {/* Mindmap Toggle for summarize/explain */}
+                                          {(itemType === 'summarize' || itemType === 'explain') && item.mindmapData && (
+                                            <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                                              <button
+                                                onClick={() => handleToggleMindmap(item.id)}
+                                                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                                                  !showMindmap[item.id]
+                                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                                                    : 'text-gray-600 dark:text-gray-400'
+                                                }`}
+                                              >
+                                                📄 Text
+                                              </button>
+                                              <button
+                                                onClick={() => handleToggleMindmap(item.id)}
+                                                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                                                  showMindmap[item.id]
+                                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                                                    : 'text-gray-600 dark:text-gray-400'
+                                                }`}
+                                              >
+                                                🧠 Mindmap
+                                              </button>
+                                            </div>
+                                          )}
+                                          
+                                          {/* Translation Navigation */}
+                                          {itemType === 'translate' && item.translations && item.translations.length > 1 && (
+                                            <div className="flex items-center gap-2">
+                                              <button
+                                                onClick={() => handlePrevTranslation(item.id, item.translations)}
+                                                className="px-2 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
+                                              >
+                                                ←
+                                              </button>
+                                              <span className="text-xs text-gray-600 dark:text-gray-400">
+                                                {((currentTranslationIndex[item.id] || 0) + 1)} / {item.translations.length}
+                                              </span>
+                                              <button
+                                                onClick={() => handleNextTranslation(item.id, item.translations)}
+                                                className="px-2 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
+                                              >
+                                                →
+                                              </button>
+                                            </div>
+                                          )}
                                         </div>
+                                        
+                                        {/* Conditional Rendering: Mindmap or Text */}
+                                        {showMindmap[item.id] && item.mindmapData ? (
+                                          <MindmapViewer mermaidCode={item.mindmapData} isDarkMode={isDarkMode} />
+                                        ) : (
+                                          <div className="text-gray-800 dark:text-gray-200 leading-relaxed text-sm space-y-1">
+                                            {itemType === 'translate' && item.translations && item.translations.length > 0 ? (
+                                              formatResult(item.translations[currentTranslationIndex[item.id] || 0].result)
+                                            ) : (
+                                              formatResult(item.result)
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
                                     )}
                                   </div>
