@@ -2431,7 +2431,7 @@ const SidePanel = () => {
     }
   };
 
-  const translateText = async (text) => {
+ const translateText = async (text) => {
     try {
       if (!apiSupport.translator) throw new Error('❌ Translator API not supported');
       if (!apiSupport.detect) throw new Error('❌ Language Detector API not supported');
@@ -2518,7 +2518,8 @@ const SidePanel = () => {
     }
 
     if (!newTranslateTo || newTranslateTo === 'auto') {
-      showToast('⚠️ Please select a valid target language');
+      console.error("❌ Invalid target language:", newTranslateTo);
+      showToast('⚠️ Please select a valid target language (not "auto")');
       return;
     }
 
@@ -2527,24 +2528,69 @@ const SidePanel = () => {
 
     try {
       const textToTranslate = originalTextForTranslation || selectedText;
-      
+      let fromLang = translateFrom;
+
       console.log('🌍 Adding translation to:', newTranslateTo);
       console.log('📝 Text length:', textToTranslate.length);
-      
-      const translation = await translateText(textToTranslate, newTranslateTo);
-      
-      setTranslateResults(prev => [...prev, {
-        targetLang: newTranslateTo,
-        result: translation
-      }]);
-      
+
+      if (fromLang === 'auto') {
+        const detector = await LanguageDetector.create();
+        const detected = await detector.detect(textToTranslate);
+        fromLang = detected[0]?.detectedLanguage || 'en';
+        detector.destroy();
+      }
+
+      console.log(`🔄 Creating translator: ${fromLang} → ${newTranslateTo}`);
+
+      const translator = await Translator.create({
+        sourceLanguage: fromLang,
+        targetLanguage: newTranslateTo,
+      });
+
+      const paragraphs = textToTranslate.split('\n');
+      const translatedParagraphs = [];
+
+      for (const paragraph of paragraphs) {
+        const trimmedParagraph = paragraph.trim();
+        if (trimmedParagraph) {
+          try {
+            const translated = await translator.translate(trimmedParagraph);
+            translatedParagraphs.push(translated);
+          } catch (error) {
+            console.error('Translation error for paragraph:', error);
+            translatedParagraphs.push(trimmedParagraph);
+          }
+        } else {
+          translatedParagraphs.push('');
+        }
+      }
+
+      translator.destroy();
+
+      const finalTranslation = translatedParagraphs.join('\n\n');
+
+      const fromLangName =
+        languages.find(l => l.code === fromLang)?.name || fromLang.toUpperCase();
+      const toLangName =
+        languages.find(l => l.code === newTranslateTo)?.name ||
+        newTranslateTo.toUpperCase();
+
+      setTranslateResults(prev => [
+        ...prev,
+        {
+          targetLang: newTranslateTo,
+          result: `**Translation (${fromLangName} → ${toLangName}):**\n\n${finalTranslation}`,
+        },
+      ]);
+
       setCurrentTranslateIndex(translateResults.length);
       showToast('✅ Translation added!');
-      
+
       const availableLanguages = languages.filter(
-        l => l.code !== 'auto' && 
-        !translateResults.some(t => t.targetLang === l.code) && 
-        l.code !== newTranslateTo
+        l =>
+          l.code !== 'auto' &&
+          !translateResults.some(t => t.targetLang === l.code) &&
+          l.code !== newTranslateTo
       );
       if (availableLanguages.length > 0) {
         setNewTranslateTo(availableLanguages[0].code);
@@ -3302,12 +3348,15 @@ const SidePanel = () => {
           break;
         case 'translate':
           setOriginalTextForTranslation(text);
-          processedResult = await translateText(text, translateFrom, translateTo);
-          setTranslateResults([{
-            targetLang: translateTo,
-            result: processedResult
-          }]);
-          setCurrentTranslateIndex(0);
+          const targetLang = translateTo === 'auto' ? 'zh' : translateTo;
+          console.log('🎯 Primary translation to:', targetLang);
+          
+          processedResult = await translateText(text, targetLang);
+            setTranslateResults([{
+              targetLang: translateTo,
+              result: processedResult
+            }]);
+            setCurrentTranslateIndex(0);
           break; 
         case 'explain':
           processedResult = await explainText(text, deepExplain);
