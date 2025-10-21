@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import { Settings, Save, Info, Download, CircleAlert, ClipboardCopy } from 'lucide-react';
+import { Settings, Save, Info, Download, CircleAlert, ClipboardCopy} from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
@@ -2648,7 +2648,7 @@ const SidePanel = () => {
       const result = await gemini_model.generateContent(prompt);
       const responseText = await result.response.text();
       
-      return responseText;
+      return `**Explain (Online Process):**\n\n${responseText}`;
     } else {
       if (!apiSupport.prompt) {
         throw new Error('❌ Prompt API not available for explanation generation');
@@ -2679,7 +2679,7 @@ const SidePanel = () => {
 
       const explanation = await session.prompt(prompt);
 
-      return explanation;
+      return `**Explain (Local Process):**\n\n${explanation}`;
     }
   };
 
@@ -3927,7 +3927,7 @@ const SidePanel = () => {
         {activeTab !== 'chat' && result && !isLoading && !result.includes('❌') && !result.includes('cancelled') && (
           <div className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium text-gray-900 dark:text-white">Result</h3>
+              <h3 className="font-medium mt-1 text-gray-900 dark:text-white">Result</h3>
               
               {/* Translate navigation controls */}
               {activeTab === 'translate' && (
@@ -4072,18 +4072,50 @@ const SidePanel = () => {
                   key={currentTranslateIndex}
                   className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm animate-in fade-in slide-in-from-right duration-300"
                 >
-                  <div
-                    className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
-                    dangerouslySetInnerHTML={{
-                      __html: DOMPurify.sanitize(marked(translateResults[currentTranslateIndex]?.result || result)),
-                    }}
-                  />
-                </div>
+
+                <button
+                  onClick={() => {
+                    const textToCopy = activeTab === 'translate' 
+                      ? translateResults[currentTranslateIndex]?.result || result
+                      : result;
+                    
+                    navigator.clipboard.writeText(textToCopy.replace(/\*\*/g, '').replace(/\*/g, ''));
+                    showToast('✅ Copied to clipboard!');
+                  }}
+                  className="fixed right-4 mt-1 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                  title="Copy result"
+                >
+                  <ClipboardCopy className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                </button>
+
+                <div
+                  className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(marked(translateResults[currentTranslateIndex]?.result || result)),
+                  }}
+                />
+              </div>
               ) : (!showMindmap || (activeTab !== 'summarize' && activeTab !== 'explain')) ? (
                   <div 
                     key="text-view"
-                    className="relative bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 animate-in fade-in slide-in-from-left duration-300 apple-intelligence-border"
+                    className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm animate-in fade-in slide-in-from-left duration-300"
                   >
+
+                  <button
+                    onClick={() => {
+                      const textToCopy = activeTab === 'translate' 
+                        ? translateResults[currentTranslateIndex]?.result || result
+                        : result;
+                      
+                      navigator.clipboard.writeText(textToCopy.replace(/\*\*/g, '').replace(/\*/g, ''));
+                      showToast('✅ Copied to clipboard!');
+                    }}
+                    className="fixed right-4 mt-1 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                    title="Copy result"
+                  >
+                    <ClipboardCopy className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                  </button>
+
                   <div
                     className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
                     dangerouslySetInnerHTML={{
