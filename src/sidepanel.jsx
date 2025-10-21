@@ -1075,13 +1075,32 @@ const SidePanel = () => {
     chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
       const currentTab = tabs[0];
       const url = currentTab.url;
+
+      const cleanMarkdown = (text) => {
+        if (!text) return text;
+        return text
+          .replace(/\*\*(.*?)\*\*/g, '$1')
+          .replace(/\*(.*?)\*/g, '$1')
+          .replace(/\n\n/g, '|||PARAGRAPH|||')
+          .replace(/\n/g, ' ')
+          .replace(/\|\|\|PARAGRAPH\|\|\|/g, '\n\n')
+          .trim();
+      };
+
+      let cleanedResult;
+      if (activeTab === 'translate' && translateResults.length > 0) {
+        cleanedResult = translateResults
+          .map(t => cleanMarkdown(t.result))
+          .join('\n\n---\n\n');
+      } else {
+        cleanedResult = cleanMarkdown(result);
+      }
+    
       const savedItem = {
         id: Date.now(),
         title: title.trim(),
         text: selectedText,
-        result: activeTab === 'translate' && translateResults.length > 0 
-          ? translateResults.map(t => t.result).join('\n\n---\n\n')
-          : result,
+        result: cleanedResult,
         url: url,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
         tags: categories,
@@ -1090,11 +1109,14 @@ const SidePanel = () => {
         category: activeTab,
         date: new Date().toISOString().split('T')[0],
         ...(activeTab === 'summarize' || activeTab === 'explain' ? {
-        mindmapData: mindmapData || tabMindmapData[activeTab] || null
+          mindmapData: mindmapData || tabMindmapData[activeTab] || null
         } : {}),
         ...(activeTab === 'translate' && translateResults.length > 0 && {
-        translations: translateResults
-      })
+          translations: translateResults.map(t => ({
+            ...t,
+            result: cleanMarkdown(t.result)
+          }))
+        })
       };
 
       chrome.storage.local.get(['savedItems'], function (data) {
@@ -4058,10 +4080,10 @@ const SidePanel = () => {
                   />
                 </div>
               ) : (!showMindmap || (activeTab !== 'summarize' && activeTab !== 'explain')) ? (
-                <div 
-                  key="text-view"
-                  className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 shadow-sm animate-in fade-in slide-in-from-left duration-300"
-                >
+                  <div 
+                    key="text-view"
+                    className="relative bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-4 animate-in fade-in slide-in-from-left duration-300 apple-intelligence-border"
+                  >
                   <div
                     className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed"
                     dangerouslySetInnerHTML={{
@@ -4633,6 +4655,79 @@ const SidePanel = () => {
 
         .slide-in-from-right {
           animation-name: slide-in-from-right;
+        }
+
+        @keyframes rainbow-glow {
+          0% {
+            box-shadow: 
+              0 0 20px rgba(255, 0, 128, 0.4),
+              0 0 40px rgba(255, 0, 128, 0.2),
+              inset 0 0 20px rgba(255, 0, 128, 0.1);
+            border-color: rgba(255, 0, 128, 0.6);
+          }
+          25% {
+            box-shadow: 
+              0 0 20px rgba(128, 0, 255, 0.4),
+              0 0 40px rgba(128, 0, 255, 0.2),
+              inset 0 0 20px rgba(128, 0, 255, 0.1);
+            border-color: rgba(128, 0, 255, 0.6);
+          }
+          50% {
+            box-shadow: 
+              0 0 20px rgba(0, 128, 255, 0.4),
+              0 0 40px rgba(0, 128, 255, 0.2),
+              inset 0 0 20px rgba(0, 128, 255, 0.1);
+            border-color: rgba(0, 128, 255, 0.6);
+          }
+          75% {
+            box-shadow: 
+              0 0 20px rgba(0, 255, 128, 0.4),
+              0 0 40px rgba(0, 255, 128, 0.2),
+              inset 0 0 20px rgba(0, 255, 128, 0.1);
+            border-color: rgba(0, 255, 128, 0.6);
+          }
+          100% {
+            box-shadow: 
+              0 0 20px rgba(255, 0, 128, 0.4),
+              0 0 40px rgba(255, 0, 128, 0.2),
+              inset 0 0 20px rgba(255, 0, 128, 0.1);
+            border-color: rgba(255, 0, 128, 0.6);
+          }
+        }
+
+        .apple-intelligence-border {
+          position: relative;
+          border: 2px solid transparent;
+          animation: rainbow-glow 4s ease-in-out infinite;
+          background-clip: padding-box;
+        }
+
+        .apple-intelligence-border::before {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          border-radius: inherit;
+          background: linear-gradient(
+            90deg,
+            rgba(255, 0, 128, 0.3),
+            rgba(128, 0, 255, 0.3),
+            rgba(0, 128, 255, 0.3),
+            rgba(0, 255, 128, 0.3),
+            rgba(255, 0, 128, 0.3)
+          );
+          background-size: 200% 100%;
+          animation: rainbow-border 3s linear infinite;
+          z-index: -1;
+          opacity: 0.5;
+        }
+
+        @keyframes rainbow-border {
+          0% {
+            background-position: 0% 50%;
+          }
+          100% {
+            background-position: 200% 50%;
+          }
         }
       `}</style>
     </div>

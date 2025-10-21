@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
-import { Bookmark, Search, BookOpen, Clock, Star, Settings, Menu, X, Trash2, Tag, Calendar, ChevronDown, ChevronUp, Grid, List, Copy, Download, ZoomIn, ZoomOut, RotateCcw, Info} from 'lucide-react';
+import { Bookmark, Search, BookOpen, Clock, Star, Settings, Menu, X, Trash2, Tag, Calendar, ChevronDown, ChevronUp, Grid, List, Copy, Download, ZoomIn, ZoomOut, RotateCcw, Info, Pin} from 'lucide-react';
 
 const ReadBuddyNotesPage = () => {
   const [activeTab, setActiveTab] = useState('saved');
@@ -20,6 +20,318 @@ const ReadBuddyNotesPage = () => {
   const showToast = (msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(""), 2500);
+  };
+
+  const highlightText = (text, searchTerm) => {
+    if (!searchTerm || !text) return text;
+    
+    const parts = text.split(new RegExp(`(${searchTerm})`, 'gi'));
+    return parts.map((part, index) => 
+      part.toLowerCase() === searchTerm.toLowerCase() ? (
+        <mark key={index} className="bg-yellow-300 dark:bg-yellow-600 px-1 rounded">
+          {part}
+        </mark>
+      ) : part
+    );
+  };
+
+  const handleTogglePin = (id) => {
+    const updatedItems = savedItems.map(item =>
+      item.id === id ? { ...item, pinned: !item.pinned } : item
+    );
+
+    setSavedItems(updatedItems);
+
+    chrome.storage.local.set({ savedItems: updatedItems }, () => {
+      console.log(`Item ${id} pin status updated`);
+    });
+  };
+
+  const getSearchContext = (text, searchTerm, contextLength = 100) => {
+    if (!searchTerm || !text) return text;
+    
+    const lowerText = text.toLowerCase();
+    const lowerSearch = searchTerm.toLowerCase();
+    const index = lowerText.indexOf(lowerSearch);
+    
+    if (index === -1) return text;
+    
+    const start = Math.max(0, index - contextLength);
+    const end = Math.min(text.length, index + searchTerm.length + contextLength);
+    
+    let snippet = text.substring(start, end);
+    if (start > 0) snippet = '...' + snippet;
+    if (end < text.length) snippet = snippet + '...';
+    
+    return snippet;
+  };
+
+  const renderNoteCard = (item, isPinned = false) => {
+    const itemType = getItemType(item);
+    const isExpanded = expandedItems.has(item.id);
+    
+    const typeConfig = {
+      summarize: { 
+        color: 'blue', 
+        gradient: 'from-blue-600 to-blue-500',
+        bgLight: 'bg-blue-50 dark:bg-blue-900/20',
+        textLight: 'text-blue-700 dark:text-blue-300',
+        border: 'border-blue-200 dark:border-blue-800'
+      },
+      translate: { 
+        color: 'green', 
+        gradient: 'from-green-600 to-green-500',
+        bgLight: 'bg-green-50 dark:bg-green-900/20',
+        textLight: 'text-green-700 dark:text-green-300',
+        border: 'border-green-200 dark:border-green-800'
+      },
+      explain: { 
+        color: 'orange', 
+        gradient: 'from-orange-600 to-orange-500',
+        bgLight: 'bg-orange-50 dark:bg-orange-900/20',
+        textLight: 'text-orange-700 dark:text-orange-300',
+        border: 'border-orange-200 dark:border-orange-800'
+      },
+      other: { 
+        color: 'gray', 
+        gradient: 'from-gray-600 to-gray-500',
+        bgLight: 'bg-gray-50 dark:bg-gray-900/20',
+        textLight: 'text-gray-700 dark:text-gray-300',
+        border: 'border-gray-200 dark:border-gray-800'
+      }
+    };
+
+    const config = typeConfig[itemType] || typeConfig.other;
+    
+    return (
+      <article
+        key={item.id}
+        className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-5 hover:shadow-lg transition-all duration-200 ${
+          viewMode === 'grid' ? 'flex flex-col h-full' : ''
+        } ${isPinned ? 'ring-2 ring-red-200 dark:ring-red-800' : ''}`}
+      >
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                {itemType !== 'other' && (
+                  <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide ${config.bgLight} ${config.textLight} shadow-sm`}>
+                    {itemType}
+                  </span>
+                )}
+                
+                {item.noteSpace && (
+                  <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">
+                    {item.noteSpace}
+                  </span>
+                )}
+                
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/50 px-3 py-1 rounded-full">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{item.time}</span>
+                </div>
+
+                {/* Pin Button */}
+                <button
+                  onClick={() => handleTogglePin(item.id)}
+                  className={`ml-auto p-1.5 rounded-full transition-all duration-300 ${
+                    item.pinned
+                      ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 animate-pin-bounce'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                  title={item.pinned ? 'Unpin' : 'Pin'}
+                >
+                  <Pin className={`w-4 h-4 transition-transform duration-300 ${item.pinned ? 'rotate-45' : ''}`} />
+                </button>
+              </div>
+              
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 line-clamp-2">
+                {item.title || 'Untitled Note'}
+              </h3>
+              
+              {!isExpanded && item.result && (
+                <div className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                  {searchQuery && searchQuery.trim().length > 2 ? (
+                    <p className="line-clamp-3">
+                      {highlightText(
+                        getSearchContext(item.text || item.result, searchQuery, 80),
+                        searchQuery
+                      )}
+                    </p>
+                  ) : (
+                    <p className="line-clamp-2">{item.result}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Rest of the card content (expandable section, tags, actions) - keep existing code */}
+          {isExpanded && (
+            <div className="space-y-4 animate-in slide-in-from-top-2">
+              {item.text && (
+                <div className={`${config.bgLight} ${config.border} border-2 rounded-xl p-4`}>
+                  <p className={`text-xs font-bold uppercase tracking-wide ${config.textLight} mb-2 flex items-center gap-2`}>
+                    <BookOpen className="w-4 h-4" />
+                    Input Text
+                  </p>
+                  <p className="text-gray-800 dark:text-gray-200 leading-relaxed text-sm">
+                    {searchQuery && searchQuery.trim().length > 2 
+                      ? highlightText(item.text, searchQuery)
+                      : item.text
+                    }
+                  </p>
+                </div>
+              )}
+              
+              {item.result && (
+                <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-gray-200 dark:border-gray-600 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                      <Star className="w-4 h-4" />
+                      Result
+                    </p>
+                    
+                    {(itemType === 'summarize' || itemType === 'explain') && item.mindmapData && (
+                      <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                        <button
+                          onClick={() => handleToggleMindmap(item.id)}
+                          className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                            !showMindmap[item.id]
+                              ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                              : 'text-gray-600 dark:text-gray-400'
+                          }`}
+                        >
+                          📄 Text
+                        </button>
+                        <button
+                          onClick={() => handleToggleMindmap(item.id)}
+                          className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                            showMindmap[item.id]
+                              ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                              : 'text-gray-600 dark:text-gray-400'
+                          }`}
+                        >
+                          🧠 Mindmap
+                        </button>
+                      </div>
+                    )}
+                    
+                    {itemType === 'translate' && item.translations && item.translations.length > 1 && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handlePrevTranslation(item.id, item.translations)}
+                          className="px-2 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
+                        >
+                          ←
+                        </button>
+                        <span className="text-xs text-gray-600 dark:text-gray-400">
+                          {((currentTranslationIndex[item.id] || 0) + 1)} / {item.translations.length}
+                        </span>
+                        <button
+                          onClick={() => handleNextTranslation(item.id, item.translations)}
+                          className="px-2 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
+                        >
+                          →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {showMindmap[item.id] && item.mindmapData ? (
+                    <MindmapViewer mermaidCode={item.mindmapData} isDarkMode={isDarkMode} />
+                  ) : (
+                    <div className="text-gray-800 dark:text-gray-200 leading-relaxed text-sm space-y-1">
+                      {itemType === 'translate' && item.translations && item.translations.length > 0 ? (
+                        formatResult(
+                          item.translations[currentTranslationIndex[item.id] || 0].result,
+                          searchQuery && searchQuery.trim().length > 2 ? searchQuery : null
+                        )
+                      ) : (
+                        formatResult(
+                          item.result,
+                          searchQuery && searchQuery.trim().length > 2 ? searchQuery : null
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {item.tags && item.tags.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {item.tags.map((tag, index) => (
+                <span 
+                  key={index}
+                  className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded-full border border-blue-200 dark:border-blue-800"
+                >
+                  <Tag className="w-3 h-3" />
+                  <span className="hidden sm:inline">{tag}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          
+          <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-gray-100 dark:border-gray-700">
+            <button
+              onClick={() => toggleExpandItem(item.id)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors border border-blue-200 dark:border-blue-800"
+            >
+              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {isExpanded ? 'Collapse' : 'Expand'}
+            </button>
+            
+            {item.url && (
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r ${config.gradient} rounded-lg hover:shadow-lg transition-all`}
+              >
+                <BookOpen className="w-4 h-4" />
+                Visit
+              </a>
+            )}
+
+            <button
+              onClick={() => handleToggleReadingLater(item.id)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all border ${
+                item.readingLater
+                  ? 'text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-900/50'
+                  : 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <Clock className={`w-4 h-4 ${item.readingLater ? '' : ''}`} />
+              <span className="hidden sm:inline">{item.readingLater ? 'Reading Later' : 'Read Later'}</span>
+              <span className="sm:hidden">Later</span>
+            </button>
+            
+            <button
+              onClick={() => handleToggleFavorite(item.id)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all border ${
+                item.favorite
+                  ? 'text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700 hover:bg-yellow-100 dark:hover:bg-yellow-900/50'
+                  : 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <Star className={`w-4 h-4 ${item.favorite ? 'fill-yellow-500 dark:fill-yellow-400' : ''}`} />
+              <span className="hidden sm:inline">{item.favorite ? 'Favorited' : 'Favorite'}</span>
+              <span className="sm:hidden">Fav</span>
+            </button>
+            
+            <button
+              onClick={() => handleDeleteItem(item.id)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors border border-red-200 dark:border-red-800 ml-auto"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Remove</span>
+            </button>
+          </div>
+        </div>
+      </article>
+    );
   };
 
   const MindmapViewer = ({ mermaidCode, isDarkMode }) => {
@@ -559,65 +871,90 @@ if (!svgContent) return;
     }
 
     if (searchQuery) {
-      filtered = filtered.filter(item =>
-        item.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.text?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.result?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+      const trimmedQuery = searchQuery.trim();
+      const isWordSearch = trimmedQuery.includes(' ') || trimmedQuery.length > 2;
+      
+      filtered = filtered.filter(item => {
+        const titleMatch = item.title?.toLowerCase().includes(trimmedQuery.toLowerCase());
+        const tagsMatch = item.tags?.some(tag => 
+          tag.toLowerCase().includes(trimmedQuery.toLowerCase())
+        );
+        
+        if (titleMatch || tagsMatch) return true;
+        
+        if (isWordSearch) {
+          const textMatch = item.text?.toLowerCase().includes(trimmedQuery.toLowerCase());
+          const resultMatch = item.result?.toLowerCase().includes(trimmedQuery.toLowerCase());
+          
+          const translationMatch = item.translations?.some(trans => 
+            trans.result?.toLowerCase().includes(trimmedQuery.toLowerCase())
+          );
+          
+          return textMatch || resultMatch || translationMatch;
+        }
+        
+        return false;
+      });
     }
 
-    return filtered;
+    const pinnedItems = filtered.filter(item => item.pinned);
+    const unpinnedItems = filtered.filter(item => !item.pinned);
+
+    return { pinnedItems, unpinnedItems, allFiltered: filtered };
   };
 
-  const formatResult = (result) => {
+  const formatResult = (result, searchTerm = null) => {
     if (!result) return '';
     
-    // Split by numbered patterns (1., 2., etc.) or bullet points
     const lines = result.split('\n').filter(line => line.trim());
     
     return lines.map((line, index) => {
       const trimmedLine = line.trim();
       if (!trimmedLine) return null;
       
-      // Check if line starts with a number followed by a period (e.g., "1.", "2.")
+      const processedContent = searchTerm ? highlightText(trimmedLine, searchTerm) : trimmedLine;
+      
       const numberedMatch = trimmedLine.match(/^(\d+)\.\s*(.+)/);
       if (numberedMatch) {
         const [, number, content] = numberedMatch;
         return (
           <div key={index} className="mb-4">
             <div className="font-semibold text-gray-900 dark:text-gray-100">
-              {number}. {content}
+              {number}. {searchTerm ? highlightText(content, searchTerm) : content}
             </div>
           </div>
         );
       }
       
-      // Check if it's a header (contains colons)
       if (trimmedLine.includes(':') && !trimmedLine.startsWith('•')) {
         const [header, ...rest] = trimmedLine.split(':');
         return (
           <div key={index} className="mb-3">
-            <strong className="text-gray-900 dark:text-gray-100">{header}:</strong>
-            {rest.join(':').trim() && <span className="ml-1">{rest.join(':').trim()}</span>}
+            <strong className="text-gray-900 dark:text-gray-100">
+              {searchTerm ? highlightText(header, searchTerm) : header}:
+            </strong>
+            {rest.join(':').trim() && (
+              <span className="ml-1">
+                {searchTerm ? highlightText(rest.join(':').trim(), searchTerm) : rest.join(':').trim()}
+              </span>
+            )}
           </div>
         );
       }
       
-      // Handle bullet points (lines starting with • or *)
       if (trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
         const content = trimmedLine.substring(1).trim();
         return (
           <div key={index} className="flex gap-2 mb-2 ml-4">
             <span className="text-blue-600 dark:text-blue-400 mt-1">•</span>
-            <span className="flex-1">{content}</span>
+            <span className="flex-1">{searchTerm ? highlightText(content, searchTerm) : content}</span>
           </div>
         );
       }
       
-      // Regular text
       return (
         <div key={index} className="mb-2">
-          {trimmedLine}
+          {processedContent}
         </div>
       );
     }).filter(Boolean);
@@ -628,20 +965,23 @@ if (!svgContent) return;
   };
 
   const groupItemsByDate = (items) => {
+    if (!Array.isArray(items)) {
+      console.warn('⚠️ groupItemsByDate expected array but got:', items);
+      return [];
+    }
+
     const grouped = {};
     items.forEach(item => {
       const date = item.date || 'No Date';
-      if (!grouped[date]) {
-        grouped[date] = [];
-      }
+      if (!grouped[date]) grouped[date] = [];
       grouped[date].push(item);
     });
-    
+
     return Object.keys(grouped)
       .sort((a, b) => new Date(b || 0) - new Date(a || 0))
       .map(date => ({
         date,
-        items: grouped[date]
+        items: grouped[date],
       }));
   };
 
@@ -652,8 +992,11 @@ if (!svgContent) return;
     return date.toLocaleDateString('en-US', options);
   };
 
-  const filteredItems = getFilteredItems();
-  const groupedItems = groupItemsByDate(filteredItems);
+  const { pinnedItems, unpinnedItems, allFiltered } = getFilteredItems();
+  const groupedPinnedItems = groupItemsByDate(pinnedItems);
+  const groupedUnpinnedItems = groupItemsByDate(unpinnedItems);
+  const groupedItems = groupItemsByDate(allFiltered);
+  const hasPinnedItems = pinnedItems.length > 0;
 
   const handleNavigateToSettings = () => {
     window.location.href = 'settings.html';
@@ -858,7 +1201,7 @@ if (!svgContent) return;
                 </div>
               </div>
               
-              {filteredItems.length === 0 ? (
+              {allFiltered.length === 0 ? (
                 <div className="text-center py-20">
                   <div className="p-12 max-w-md mx-auto">
                     <Bookmark className="w-20 h-20 text-blue-400 dark:text-blue-500 mx-auto mb-6" />
@@ -874,7 +1217,41 @@ if (!svgContent) return;
                 </div>
               ) : (
                 <div className="space-y-10">
-                  {groupedItems.map((group) => (
+                  {/* Pinned Section */}
+                  {hasPinnedItems && (
+                    <div className="relative">
+                      <div className="flex items-center gap-3 mb-4">
+                        <Pin className="w-5 h-5 text-red-500" />
+                        <h3 className="text-sm font-semibold text-red-500 dark:text-red-400 uppercase tracking-wider">
+                          Pinned
+                        </h3>
+                        <div className="flex-1 h-px bg-red-200 dark:bg-red-800"></div>
+                      </div>
+                      
+                      <div className="space-y-8">
+                        {groupedPinnedItems.map((group) => (
+                          <div key={`pinned-${group.date}`}>
+                            <div className="flex items-center gap-2 mb-3 ml-4">
+                              <Calendar className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {formatDate(group.date)}
+                              </span>
+                            </div>
+                            
+                            <div className={viewMode === 'grid' 
+                                ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'
+                                : 'space-y-4'
+                              }>
+                              {group.items.map((item) => renderNoteCard(item, true))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Regular Items */}
+                  {groupedUnpinnedItems.map((group) => (
                     <div key={group.date} className="relative">
                       <div className="flex items-center gap-3 mb-4">
                         <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -883,253 +1260,11 @@ if (!svgContent) return;
                         <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
                       </div>
                       
-                      {/* Items for this date */}
                       <div className={viewMode === 'grid' 
                           ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'
                           : 'space-y-4'
                         }>
-                        {group.items.map((item) => {
-                          const itemType = getItemType(item);
-                          const isExpanded = expandedItems.has(item.id);
-                          
-                          const typeConfig = {
-                            summarize: { 
-                              color: 'blue', 
-                              gradient: 'from-blue-600 to-blue-500',
-                              bgLight: 'bg-blue-50 dark:bg-blue-900/20',
-                              textLight: 'text-blue-700 dark:text-blue-300',
-                              border: 'border-blue-200 dark:border-blue-800'
-                            },
-                            translate: { 
-                              color: 'green', 
-                              gradient: 'from-green-600 to-green-500',
-                              bgLight: 'bg-green-50 dark:bg-green-900/20',
-                              textLight: 'text-green-700 dark:text-green-300',
-                              border: 'border-green-200 dark:border-green-800'
-                            },
-                            explain: { 
-                              color: 'orange', 
-                              gradient: 'from-orange-600 to-orange-500',
-                              bgLight: 'bg-orange-50 dark:bg-orange-900/20',
-                              textLight: 'text-orange-700 dark:text-orange-300',
-                              border: 'border-orange-200 dark:border-orange-800'
-                            },
-                            other: { 
-                              color: 'gray', 
-                              gradient: 'from-gray-600 to-gray-500',
-                              bgLight: 'bg-gray-50 dark:bg-gray-900/20',
-                              textLight: 'text-gray-700 dark:text-gray-300',
-                              border: 'border-gray-200 dark:border-gray-800'
-                            }
-                          };
-
-                          const config = typeConfig[itemType] || typeConfig.other;
-                          
-                          return (
-                            <article
-                                key={item.id}
-                                className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-5 hover:shadow-lg transition-all duration-200 ${
-                                  viewMode === 'grid' ? 'flex flex-col h-full' : ''
-                                }`}
-                              >
-                                                
-                              <div className="space-y-4">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-3 flex-wrap">
-                                      {itemType !== 'other' && (
-                                        <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide ${config.bgLight} ${config.textLight} shadow-sm`}>
-                                          {itemType}
-                                        </span>
-                                      )}
-                                      
-                                      {item.noteSpace && (
-                                        <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">
-                                          {item.noteSpace}
-                                        </span>
-                                      )}
-                                      
-                                      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/50 px-3 py-1 rounded-full">
-                                        <Clock className="w-3.5 h-3.5" />
-                                        <span>{item.time}</span>
-                                      </div>
-                                    </div>
-                                    
-                                    <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 line-clamp-2">
-                                      {item.title || 'Untitled Note'}
-                                    </h3>
-                                    
-                                    {!isExpanded && item.result && (
-                                      <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-2 leading-relaxed">
-                                        {item.result}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                                
-                                {/* Expandable Content */}
-                                {isExpanded && (
-                                  <div className="space-y-4 animate-in slide-in-from-top-2">
-                                    {item.text && (
-                                      <div className={`${config.bgLight} ${config.border} border-2 rounded-xl p-4`}>
-                                        <p className={`text-xs font-bold uppercase tracking-wide ${config.textLight} mb-2 flex items-center gap-2`}>
-                                          <BookOpen className="w-4 h-4" />
-                                          Input Text
-                                        </p>
-                                        <p className="text-gray-800 dark:text-gray-200 leading-relaxed text-sm">
-                                          {item.text}
-                                        </p>
-                                      </div>
-                                    )}
-                                    
-                                    {item.result && (
-                                      <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                                        <div className="flex items-center justify-between mb-3">
-                                          <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300 flex items-center gap-2">
-                                            <Star className="w-4 h-4" />
-                                            Result
-                                          </p>
-                                          
-                                          {/* Mindmap Toggle for summarize/explain */}
-                                          {(itemType === 'summarize' || itemType === 'explain') && item.mindmapData && (
-                                            <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-                                              <button
-                                                onClick={() => handleToggleMindmap(item.id)}
-                                                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                                                  !showMindmap[item.id]
-                                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                                                    : 'text-gray-600 dark:text-gray-400'
-                                                }`}
-                                              >
-                                                📄 Text
-                                              </button>
-                                              <button
-                                                onClick={() => handleToggleMindmap(item.id)}
-                                                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                                                  showMindmap[item.id]
-                                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                                                    : 'text-gray-600 dark:text-gray-400'
-                                                }`}
-                                              >
-                                                🧠 Mindmap
-                                              </button>
-                                            </div>
-                                          )}
-                                          
-                                          {/* Translation Navigation */}
-                                          {itemType === 'translate' && item.translations && item.translations.length > 1 && (
-                                            <div className="flex items-center gap-2">
-                                              <button
-                                                onClick={() => handlePrevTranslation(item.id, item.translations)}
-                                                className="px-2 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
-                                              >
-                                                ←
-                                              </button>
-                                              <span className="text-xs text-gray-600 dark:text-gray-400">
-                                                {((currentTranslationIndex[item.id] || 0) + 1)} / {item.translations.length}
-                                              </span>
-                                              <button
-                                                onClick={() => handleNextTranslation(item.id, item.translations)}
-                                                className="px-2 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
-                                              >
-                                                →
-                                              </button>
-                                            </div>
-                                          )}
-                                        </div>
-                                        
-                                        {/* Conditional Rendering: Mindmap or Text */}
-                                        {showMindmap[item.id] && item.mindmapData ? (
-                                          <MindmapViewer mermaidCode={item.mindmapData} isDarkMode={isDarkMode} />
-                                        ) : (
-                                          <div className="text-gray-800 dark:text-gray-200 leading-relaxed text-sm space-y-1">
-                                            {itemType === 'translate' && item.translations && item.translations.length > 0 ? (
-                                              formatResult(item.translations[currentTranslationIndex[item.id] || 0].result)
-                                            ) : (
-                                              formatResult(item.result)
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                
-                                {/* Tags */}
-                                {item.tags && item.tags.length > 0 && (
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    {item.tags.map((tag, index) => (
-                                      <span 
-                                        key={index}
-                                        className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded-full border border-blue-200 dark:border-blue-800"
-                                      >
-                                        <Tag className="w-3 h-3" />
-                                        <span className="hidden sm:inline">{tag}</span>
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                                
-                                {/* Actions */}
-                                <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-gray-100 dark:border-gray-700">
-                                  <button
-                                    onClick={() => toggleExpandItem(item.id)}
-                                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors border border-blue-200 dark:border-blue-800"
-                                  >
-                                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                                    {isExpanded ? 'Collapse' : 'Expand'}
-                                  </button>
-                                  
-                                  {item.url && (
-                                    <a
-                                      href={item.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r ${config.gradient} rounded-lg hover:shadow-lg transition-all`}
-                                    >
-                                      <BookOpen className="w-4 h-4" />
-                                      Visit
-                                    </a>
-                                  )}
-
-                                  <button
-                                    onClick={() => handleToggleReadingLater(item.id)}
-                                    className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all border ${
-                                      item.readingLater
-                                        ? 'text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-900/50'
-                                        : 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                    }`}
-                                  >
-                                    <Clock className={`w-4 h-4 ${item.readingLater ? '' : ''}`} />
-                                    <span className="hidden sm:inline">{item.readingLater ? 'Reading Later' : 'Read Later'}</span>
-                                    <span className="sm:hidden">Later</span>
-                                  </button>
-                                  
-                                  <button
-                                    onClick={() => handleToggleFavorite(item.id)}
-                                    className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all border ${
-                                      item.favorite
-                                        ? 'text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700 hover:bg-yellow-100 dark:hover:bg-yellow-900/50'
-                                        : 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                    }`}
-                                  >
-                                    <Star className={`w-4 h-4 ${item.favorite ? 'fill-yellow-500 dark:fill-yellow-400' : ''}`} />
-                                    <span className="hidden sm:inline">{item.favorite ? 'Favorited' : 'Favorite'}</span>
-                                    <span className="sm:hidden">Fav</span>
-                                  </button>
-                                  
-                                  <button
-                                    onClick={() => handleDeleteItem(item.id)}
-                                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors border border-red-200 dark:border-red-800 ml-auto"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                    <span className="hidden sm:inline">Remove</span>
-                                  </button>
-                                </div>
-                              </div>
-                            </article>
-                          );
-                        })}
+                        {group.items.map((item) => renderNoteCard(item, false))}
                       </div>
                     </div>
                   ))}
@@ -1145,6 +1280,114 @@ if (!svgContent) return;
           {toastMsg}
         </div>
       )}
+
+      <style jsx>{`
+        @keyframes rainbow-glow {
+          0% {
+            box-shadow: 
+              0 0 20px rgba(255, 0, 128, 0.4),
+              0 0 40px rgba(255, 0, 128, 0.2),
+              inset 0 0 20px rgba(255, 0, 128, 0.1);
+            border-color: rgba(255, 0, 128, 0.6);
+          }
+          25% {
+            box-shadow: 
+              0 0 20px rgba(128, 0, 255, 0.4),
+              0 0 40px rgba(128, 0, 255, 0.2),
+              inset 0 0 20px rgba(128, 0, 255, 0.1);
+            border-color: rgba(128, 0, 255, 0.6);
+          }
+          50% {
+            box-shadow: 
+              0 0 20px rgba(0, 128, 255, 0.4),
+              0 0 40px rgba(0, 128, 255, 0.2),
+              inset 0 0 20px rgba(0, 128, 255, 0.1);
+            border-color: rgba(0, 128, 255, 0.6);
+          }
+          75% {
+            box-shadow: 
+              0 0 20px rgba(0, 255, 128, 0.4),
+              0 0 40px rgba(0, 255, 128, 0.2),
+              inset 0 0 20px rgba(0, 255, 128, 0.1);
+            border-color: rgba(0, 255, 128, 0.6);
+          }
+          100% {
+            box-shadow: 
+              0 0 20px rgba(255, 0, 128, 0.4),
+              0 0 40px rgba(255, 0, 128, 0.2),
+              inset 0 0 20px rgba(255, 0, 128, 0.1);
+            border-color: rgba(255, 0, 128, 0.6);
+          }
+        }
+
+        .apple-intelligence-border {
+          position: relative;
+          border: 2px solid transparent;
+          animation: rainbow-glow 4s ease-in-out infinite;
+          background-clip: padding-box;
+        }
+
+        .apple-intelligence-border::before {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          border-radius: inherit;
+          background: linear-gradient(
+            90deg,
+            rgba(255, 0, 128, 0.3),
+            rgba(128, 0, 255, 0.3),
+            rgba(0, 128, 255, 0.3),
+            rgba(0, 255, 128, 0.3),
+            rgba(255, 0, 128, 0.3)
+          );
+          background-size: 200% 100%;
+          animation: rainbow-border 3s linear infinite;
+          z-index: -1;
+          opacity: 0.5;
+        }
+
+        @keyframes rainbow-border {
+          0% {
+            background-position: 0% 50%;
+          }
+          100% {
+            background-position: 200% 50%;
+          }
+        }
+
+        @keyframes slide-in-from-top-2 {
+          from { 
+            opacity: 0;
+            transform: translateY(-8px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .animate-in {
+          animation-fill-mode: both;
+        }
+
+        .slide-in-from-top-2 {
+          animation-name: slide-in-from-top-2;
+          animation-duration: 300ms;
+        }
+
+        @keyframes pin-bounce {
+          0%, 100% {
+            transform: translateY(0) rotate(45deg);
+          }
+          50% {
+            transform: translateY(-4px) rotate(45deg);
+          }
+        }
+
+        .animate-pin-bounce {
+          animation: pin-bounce 0.6s ease-in-out;
+        }
+      `}</style>
     </div>
   );
 }
