@@ -2,21 +2,16 @@
 
 <div align="center">
 
-![ReadBuddy Logo](https://via.placeholder.com/128x128.png?text=📚)
+<img src="https://github.com/Wilsomwong2004/ReadBuddy/blob/main/src/assets/Readbuddy_pic/HeroNew.png" alt="ReadBuddy Logo" width="700">
 
 **ReadBuddy - AI Powered Reading Assistant**
 
-[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-yellow?logo=googlechrome)](https://chrome.google.com/webstore)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Wilsomwong2004/readbuddy/pulls)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 *Read Smarter, Not Harder*
 
 </div>
-
-## 🌐 Language
-
-**English** | **[Simplified Chinese 简体中文](README_zh.md)**
 
 ---
 
@@ -36,13 +31,7 @@ ReadBuddy is an intelligent reading assistant extension based on **Chrome's buil
 
 ### For Users
 
-#### Method 1: Chrome Web Store (Recommended)
-1. Visit [Chrome Web Store - ReadBuddy](https://chrome.google.com/webstore)
-2. Click "Add to Chrome"
-3. Confirm installation permissions
-4. Start using!
-
-#### Method 2: Developer Mode Installation
+#### Developer Mode Installation
 1. Download ReadBuddy extension files
 2. Open Chrome, go to `chrome://extensions/`
 3. Enable "Developer mode"
@@ -68,8 +57,6 @@ ReadBuddy is an intelligent reading assistant extension based on **Chrome's buil
 4. Search for "**Prompt API for Gemini Nano**"
 5. Set it to "**Enabled**"
 6. **RESTART CHROME** for changes to take effect
-
-![Chrome Flags Settings](https://via.placeholder.com/600x400.png?text=Chrome+Flags+Setup)
 
 -------------
 
@@ -97,21 +84,15 @@ npm run build
 ##### Chrome Loading Steps
 
 1.  Open Chrome, visit `chrome://extensions/`
-
 2.  Enable "Developer mode" (top-right switch)
-
 3.  Click "Load unpacked"
-
 4.  Select project root directory
-
 5.  Ensure extension is enabled
 
 ##### Verification
 
 1.  Select text on any webpage
-
 2.  Right-click, should see ReadBuddy options
-
 3.  Or click ReadBuddy icon in toolbar to open sidebar
 
 📖 User Guide
@@ -122,33 +103,25 @@ npm run build
 ##### 1\. Smart Summarize
 
 -   Select text → Click extension icon → Choose "Summarize"
-
 -   Or right-click menu → "ReadBuddy: Summarize"
-
 -   Get key points, paragraph, or Q&A format summaries
 
 ##### 2\. Instant Translate
 
--   Support 50+ language translations
-
+-   Support 9 language translations
 -   Context-aware translation
-
 -   Maintains professional term accuracy
 
 ##### 3\. Deep Explain
 
 -   Simplifies complex concepts
-
 -   Structured output: overview, detailed analysis, key insights
-
 -   Suitable for academic and technical documents
 
 ##### 4\. Smart Chat
 
 -   Q&A based on page content
-
 -   Multi-turn conversation
-
 -   Automatically judges if page context is needed
 
 ### Advanced Features
@@ -156,43 +129,39 @@ npm run build
 ##### 📊 Quick Analysis
 
 -   Text feature analysis
-
 -   Reading difficulty assessment
-
 -   Reading time estimation
 
 ##### 💾 Save Function
 
 -   Build personal knowledge base
-
 -   Add tags and notes
-
 -   Quick retrieval of saved content
 
 ##### 🔗 Related Concepts
 
 -   Smart concept expansion
-
 -   Knowledge network building
-
 -   Recommended extended reading
+
+##### 🧠 Generate Mindmap
+
+-   Idea expansion
+-   Knowledge connection
+-   Suggested reading
 
 ### Usage Tips
 
 1.  Best Practices:
 
     -   For long articles, use summary function first to get overview
-
     -   Use explain function when encountering professional terms
-
     -   Save important content for later review
 
 2.  Performance Optimization:
 
     -   Use Chat function for simple questions (faster response)
-
     -   Trigger complex analysis when needed
-
     -   Use save function to avoid repeated processing
 
 🏗️ Technical Architecture
@@ -201,45 +170,44 @@ npm run build
 ### Core Components
 
 ```bash
-readbuddy/
-├── manifest.json          # Extension configuration
-├── popup/                 # Popup interface
-│   ├── popup.html
-│   ├── popup.js
-│   └── popup.css
-├── sidepanel/             # Sidebar interface
-│   ├── sidepanel.html
-│   ├── sidepanel.js
-│   └── sidepanel.css
-├── content/               # Content scripts
-│   └── content.js
-├── background/            # Background scripts
-│   └── background.js
-└── assets/                # Static resources
-    ├── icons/
-    └── images/
+ReadBuddy/
+├── manifest.json          # Chrome extension configuration
+├── dist/                  # Build output files (can be ignored during development)
+│   ├── background.js      # Core background script
+│   ├── content.js         # Core content script
+│   ├── popup.html         # Popup interface
+│   ├── popup.js           # Popup logic
+│   ├── sidepanel.html     # Sidebar interface
+│   ├── sidepanel.js       # Sidebar logic
+│   └── assets/            # Bundled resources (icons, library files, etc.)
+├── src/                   # Source code directory
+│   ├── background.js      # Background script (for development)
+│   ├── content.js         # Content script (for development)
+│   ├── popup.jsx          # Popup React component
+│   ├── sidepanel.jsx      # Sidebar React component
+│   ├── settings.jsx       # Settings page React component
+│   ├── notes.jsx          # Notes page React component
+│   └── assets/            # Static resources
+│       ├── icon/          # Icons
+│       └── Readbuddy_pic/ # UI image resources
+└── utils/                  # Utility scripts
+    ├── darkMode.js         # Dark mode functionality
+    └── preload.js          # Page preload script
 ```
 
 ### API Usage
 
 -   Chrome Built-in AI: Gemini Nano
-
 -   Summarizer API: Text summarization
-
 -   Translator API: Language translation
-
 -   Prompt API: Custom AI interaction
-
 -   Chrome Storage API: Data persistence
 
 ### Technical Features
 
 -   🔧 Hybrid Architecture: Local AI processing + Cloud enhancement (on-demand)
-
 -   🎨 Modern UI: Responsive design, dark mode support
-
 -   📱 Performance Optimization: Smart caching, lazy loading
-
 -   🛡️ Error Handling: Graceful degradation, friendly prompts
 
 🎯 Competition Highlights
@@ -250,33 +218,25 @@ readbuddy/
 1.  Deep Chrome Built-in AI Integration
 
     -   Fully utilizes Gemini Nano capabilities
-
     -   Local processing ensures privacy security
-
     -   Zero-latency AI response
 
 2.  Smart Content Understanding
 
     -   Multi-dimensional text analysis
-
     -   Context-aware processing
-
     -   Personalized learning recommendations
 
 3.  Excellent User Experience
 
     -   Intuitive interaction design
-
     -   Progressive feature display
-
     -   Complete error handling
 
 ### Product Value
 
 -   ✅ Solves Real Pain Points: Information overload, low reading efficiency
-
 -   ✅ Differentiation Advantages: Privacy protection, offline use, completely free
-
 -   ✅ Strong Extensibility: Modular architecture, easy feature expansion
 
 🔧 Development Guide
@@ -294,40 +254,22 @@ npm run dev
 # Build production version
 npm run build
 
-# Code linting
-npm run lint
 ```
 
 ### File Structure Explanation
 
 ``` bash
 src/
-├── components/     # React components
-├── utils/         # Utility functions
-├── services/      # API services
-├── styles/        # Style files
-└── locales/       # Internationalization files
-```
+├── assets/         # Static resources (icons, images, etc.)
+├── lib/            # Third-party libraries (mermaid.js, pdf.mjs, readability.js)
+├── utils/          # Utility scripts (darkMode.js, darkModeBtn.jsx, preload.js)
+├── background.js   # Background script for global events
+├── content.js      # Content script injected into web pages
+├── popup.jsx       # Popup interface React component
+├── sidepanel.jsx   # Sidebar interface React component
+├── settings.jsx    # Settings page React component
+└── notes.jsx       # Notes page React component
 
-### Core Function Implementation
-
-javascript
-
-``` bash
-// AI processing core
-class AICore {
-  async summarize(text, mode = 'keypoints') {
-    // Use Summarizer API
-  }
-
-  async translate(text, targetLang) {
-    // Use Translator API
-  }
-
-  async explain(text, depth = 'standard') {
-    // Use Prompt API
-  }
-}
 ```
 
 🐛 Troubleshooting
@@ -335,32 +277,21 @@ class AICore {
 
 ### Common Issues
 
-Q: Extension icon not showing?\
-A: Reload extension or restart Chrome
+Q: Extension icon is not showing
+A: Reload the extension in chrome://extensions or restart Chrome.
 
-Q: AI functions not responding?\
-A: Check if Chrome version supports built-in AI, or try refreshing page
+Q: AI functions are not responding
+A: Ensure your Chrome version supports built-in AI, or refresh the page.
 
-Q: Save function not working?\
-A: Check storage permissions, clear extension data and retry
+Q: Save function is not working
+A: Verify storage permissions, clear extension data, and try again.
 
-Q: Performance slow?\
-A: Avoid processing overly long text simultaneously, use summary function first
+Q: Performance is slow
+A: ReadBuddy processes text locally, so performance depends on text length. For very long texts, it splits the content into chunks, summarizes each, and combines them. Before processing, the extension informs you of the estimated time. Using the summary function first can help speed up the process.
 
-Q: "AI features not available" error?\
-A: Make sure you've enabled Gemini Nano in `chrome://flags` and restarted Chrome
+Q: "AI features not available" error
+A: Make sure Gemini Nano is enabled in chrome://flags and restart Chrome.
 
-### Debug Mode
-
-javascript
-
-``` bash
-// Enable debug in console
-localStorage.setItem('readbuddy_debug', 'true')
-
-// View logs
-chrome.runtime.sendMessage({action: 'getLogs'})
-```
 
 📄 License
 ----------
@@ -371,16 +302,14 @@ This project is licensed under the MIT License - see the [LICENSE](https://lice
 ------------------
 
 -   Chrome team for built-in AI capabilities
-
--   Mozilla's Readability.js project
-
+-   Mozilla's Readability.js and PDF.js project
+-   Mermaid.js for generating Mindmaps
 -   All contributors and test users
 
 📞 Contact Us
 -------------
 
 -   🐛 Issues: [GitHub Issues](https://github.com/Wilsomwong2004/readbuddy/issues)
-
 -   💬 Discussions: [GitHub Discussions](https://github.com/Wilsomwong2004/readbuddy/discussions)
 
 
@@ -390,29 +319,21 @@ This project is licensed under the MIT License - see the [LICENSE](https://lice
 ### Demo Highlights
 
 1.  Core Technology: Showcase deep integration with Chrome's built-in AI
-
 2.  User Experience: Smooth interactions and instant responses
-
 3.  Product Value: Complete solution solving real user pain points
 
 ### Testing Suggestions
 
 -   Test on different types of webpages (news, academic, technical documents)
-
 -   Experience switching between four core functions
-
 -   Verify offline usage capability
-
 -   Test save and knowledge base functions
 
 ### Technical Evaluation Points
 
 -   ✅ Correct usage of Chrome AI API
-
 -   ✅ Performance optimization measures
-
 -   ✅ Error handling and edge cases
-
 -   ✅ Code quality and architecture design
 
 Enjoy your experience! 🚀
@@ -423,6 +344,6 @@ Enjoy your experience! 🚀
 
 "Make reading a pleasure, not a burden"
 
-User Guide - Technical Docs - [Report Issues](https://github.com/Wilsomwong2004/readbuddy/issues)
+[Report Issues](https://github.com/Wilsomwong2004/readbuddy/issues)
 
 </div>
