@@ -277,19 +277,19 @@ src/
 
 ### Common Issues
 
-Q: Extension icon is not showing
+Q: Extension icon is not showing?\
 A: Reload the extension in chrome://extensions or restart Chrome.
 
-Q: AI functions are not responding
+Q: AI functions are not responding?\
 A: Ensure your Chrome version supports built-in AI, or refresh the page.
 
-Q: Save function is not working
+Q: Save function is not working?\
 A: Verify storage permissions, clear extension data, and try again.
 
-Q: Performance is slow
+Q: Performance is slow?\
 A: ReadBuddy processes text locally, so performance depends on text length. For very long texts, it splits the content into chunks, summarizes each, and combines them. Before processing, the extension informs you of the estimated time. Using the summary function first can help speed up the process.
 
-Q: "AI features not available" error
+Q: "AI features not available" error?\
 A: Make sure Gemini Nano is enabled in chrome://flags and restart Chrome.
 
 
