@@ -3698,14 +3698,14 @@ useEffect(() => {
                   <p className="text-xs mt-1 text-gray-400 dark:text-gray-500">
                     Ask questions, request explanations, or just chat!
                   </p>
-                  {isPageContextLoaded && (
+                  {isPageContextLoaded && !isPDF && (
                     <p className="text-xs mt-2 text-green-600 dark:text-green-400">
                       ✅ Ask questions about the current page!
                     </p>
                   )}
                   {!isPageContextLoaded && !isLoading && !isPDF && (
                     <p className="text-xs mt-2 text-yellow-600 dark:text-yellow-400">
-                      ⚠️ Waiting for read the page but still can chat.
+                      ⚠️ Waiting for read the page but still can chat. 
                     </p>
                   )}
                 </div>
