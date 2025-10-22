@@ -8,11 +8,11 @@ let extensionContextValid = true;
 let scrollTimeout = null;
 let isScrolling = false;
 let pendingSelection = null;
+let hasShownReloadNotification = false;
 
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 3;
 
-// Check if extension context is valid
 function isExtensionContextValid() {
   try {
     const valid = chrome.runtime && chrome.runtime.id;
@@ -22,7 +22,6 @@ function isExtensionContextValid() {
       console.log('[Content] Extension context invalid, attempting reconnection...');
       reconnectAttempts++;
       setTimeout(() => {
-        // Try to reinitialize
         if (chrome.runtime && chrome.runtime.id) {
           console.log('[Content] Reconnection successful!');
           extensionContextValid = true;
@@ -78,10 +77,12 @@ function safeSendMessage(message, callback) {
 // Show notification to refresh page
 function showExtensionReloadNotification() {
   // Only show once
-  if (document.getElementById('readbuddy-reload-notification')) {
+  if (hasShownReloadNotification || document.getElementById('readbuddy-reload-notification')) {
     return;
   }
-  
+
+  hasShownReloadNotification = true;
+
   const notification = document.createElement('div');
   notification.id = 'readbuddy-reload-notification';
   notification.innerHTML = `
@@ -132,7 +133,6 @@ function showExtensionReloadNotification() {
   document.body.appendChild(notification);
 }
 
-// Initialize extension state
 function initializeExtension() {
   if (!isExtensionContextValid()) {
     console.log('[Content] Extension context invalid during initialization');
@@ -158,22 +158,18 @@ function initializeExtension() {
   });
 }
 
-// Initial setup
 initializeExtension();
 
-// Re-initialize when page becomes visible (tab switching)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     console.log('[Content] Tab became visible, reinitializing...');
     
-    // Small delay to ensure extension context is ready
     setTimeout(() => {
       initializeExtension();
     }, 100);
   }
 });
 
-// Re-initialize on focus (additional safety)
 window.addEventListener('focus', () => {
   console.log('[Content] Window focused, checking extension state...');
   
@@ -227,8 +223,12 @@ if (isExtensionContextValid()) {
 }
 
 document.addEventListener('mouseup', async (e) => {
-  if (!await ensureContentScriptReady()) {
-    return;
+  async function ensureContentScriptReady() {
+    if (!isExtensionContextValid()) {
+      console.log('[Content] Extension context lost');
+      return false;
+    }
+    return true;
   }
 
   const tooltip = document.getElementById('readbuddy-tooltip');

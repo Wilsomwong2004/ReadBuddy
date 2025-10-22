@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import { Settings, Save, Info, Download, CircleAlert, ClipboardCopy} from 'lucide-react';
 import { initializeApp } from "firebase/app";
@@ -101,6 +101,7 @@ const SidePanel = () => {
   const [title, setTitle] = useState("");
   const [selectedNoteSpace, setSelectedNoteSpace] = useState(null);
   const [savedData, setSavedData] = useState(null);
+  const [isPDF, setIsPDF] = useState(false);
 
   const PDF_URLS = {
     pdf: chrome.runtime.getURL('lib/pdf.mjs'),
@@ -139,6 +140,62 @@ const SidePanel = () => {
   let pdfJsReadyPromise = null;
   const userCancelledRef = useRef(false);
   const isManualClick = useState(false);
+
+const checkIfPDF = useCallback(() => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]?.url) {
+      const url = tabs[0].url;
+      const isPDFPage = 
+        url.endsWith('.pdf') || 
+        url.includes('.pdf?') || 
+        (url.includes('pdf') && url.includes('blob:')) ||
+        (url.startsWith('file://') && url.endsWith('.pdf'));
+      
+      console.log('[Sidepanel] Checking PDF status:', url, isPDFPage);
+      setIsPDF(isPDFPage);
+    }
+  });
+}, []);
+
+
+useEffect(() => {
+  checkIfPDF();
+
+  const handleTabActivated = () => {
+    console.log('[Sidepanel] Tab activated, checking PDF status...');
+    checkIfPDF();
+  };
+
+  const handleTabUpdated = (tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete') {
+        console.log('[Sidepanel] Tab updated, checking PDF status...');
+        checkIfPDF();
+      }
+    };
+
+    chrome.tabs.onActivated.addListener(handleTabActivated);
+    chrome.tabs.onUpdated.addListener(handleTabUpdated);
+
+    return () => {
+      chrome.tabs.onActivated.removeListener(handleTabActivated);
+      chrome.tabs.onUpdated.removeListener(handleTabUpdated);
+    };
+  }, [checkIfPDF]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Sidepanel] Sidebar became visible, checking PDF status...');
+        checkIfPDF();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [checkIfPDF]);
 
   useEffect(() => {
     if (activeTab !== 'summarize' && activeTab !== 'explain') {
@@ -217,7 +274,7 @@ const SidePanel = () => {
               try {
                 window.mermaid.initialize({ 
                   startOnLoad: false,
-                  theme: mindmapTheme, // Use saved theme preference
+                  theme: mindmapTheme, 
                   mindmap: {
                     padding: 20,
                     useMaxWidth: true
@@ -1041,7 +1098,15 @@ const SidePanel = () => {
     try {
       setIsLoading(true);
       setResult(''); 
-      
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const isPDF = tab.url.toLowerCase().includes('.pdf');
+
+       if (isPDF && !pdfJsReady) {
+        showToast('⏳ Loading PDF library, please wait...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    
       const cached = findCachedPage(currentPageUrl);
       if (cached && cached.fullContent) {
         console.log('✅ Loading content from page history cache');
@@ -1417,19 +1482,26 @@ const SidePanel = () => {
         console.log('⚠️ PDF.js not ready yet, waiting...');
         
         let attempts = 0;
-        while (!pdfJsReady && attempts < 20) {
+        const maxAttempts = 60; // Increased from 20 to 60 (30 seconds)
+        
+        while (!pdfJsReady && attempts < maxAttempts) {
           await new Promise(resolve => setTimeout(resolve, 500));
           attempts++;
+          
+          // Log progress every 5 attempts (2.5 seconds)
+          if (attempts % 5 === 0) {
+            console.log(`⏳ Still waiting for PDF.js... (${attempts * 0.5}s)`);
+          }
         }
         
         if (!pdfJsReady) {
-          throw new Error('PDF.js library is not ready. Please wait a moment and try again.');
+          throw new Error('PDF.js library failed to load. Please refresh the page and try again.');
         }
 
         console.log('✅ PDF.js is ready, proceeding with extraction');
       }
       
-      console.log('🔄 Fetching PDF with PDF.js...');
+      console.log('📄 Fetching PDF with PDF.js...');
       const pdfData = await fetchAndParsePDF(tab.url);
       
       if (pdfData && pdfData.content && pdfData.content.length > 0) {
@@ -1445,10 +1517,10 @@ const SidePanel = () => {
           note: 'Unable to extract text from this PDF. It may be:\n' +
                 '• A scanned document (image-based)\n' +
                 '• Password-protected\n' +
-                '• A local file (file:// URLs cannot be fetched)\n' +
+                '• A local file (file:// URLs have limited access)\n' +
                 '• An empty or corrupted PDF',
           type: 'PDF',
-          suggestion: 'Try copying and pasting the text directly if visible.'
+          suggestion: 'Try opening the PDF in Chrome\'s built-in viewer first, then use the extension.'
         }
       };
       
@@ -1459,7 +1531,10 @@ const SidePanel = () => {
         metadata: {
           title: 'Extraction Error',
           error: error.message,
-          type: 'PDF'
+          type: 'PDF',
+          suggestion: error.message.includes('failed to load') 
+            ? 'Please refresh the page and try again after a moment.'
+            : 'Try opening the PDF in Chrome first before extracting.'
         }
       };
     }
@@ -1514,7 +1589,7 @@ const SidePanel = () => {
       console.log('📄 Starting PDF extraction for:', url);
       
       let attempts = 0;
-      const maxAttempts = 40;
+      const maxAttempts = 60;
       
       while (!pdfJsReady && attempts < maxAttempts) {
         console.log(`⏳ Waiting for PDF.js... (${attempts * 500}ms)`);
@@ -3587,7 +3662,7 @@ const SidePanel = () => {
       
       case 'chat':
         return (
-          <div className="flex flex-col h-[700px] overflow-y-hidden space-y-4 pb-0">
+          <div className="flex flex-col h-[calc(100vh-160px)] overflow-y-hidden space-y-4 pb-0">
             <div className="flex items-center justify-between rounded-lg">
               <h3 className="font-medium text-gray-900 dark:text-white flex items-center space-x-2">
                 <span>Readbuddy AI Assistant</span>
@@ -3628,7 +3703,7 @@ const SidePanel = () => {
                       ✅ Ask questions about the current page!
                     </p>
                   )}
-                  {!isPageContextLoaded && !isLoading && (
+                  {!isPageContextLoaded && !isLoading && !isPDF && (
                     <p className="text-xs mt-2 text-yellow-600 dark:text-yellow-400">
                       ⚠️ Waiting for read the page but still can chat.
                     </p>
