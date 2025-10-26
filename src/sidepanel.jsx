@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import { Settings, Save, Info, Download, CircleAlert, ClipboardCopy} from 'lucide-react';
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
 import { loadDarkMode, saveDarkMode, applyDarkMode } from './utils/darkMode';
 import { marked } from "marked";
@@ -55,6 +54,17 @@ const SidePanel = () => {
   const [tabShowMindmap, setTabShowMindmap] = useState({
     summarize: false,
     explain: false
+  });
+
+  const [downloadStatus, setDownloadStatus] = useState({
+    summarizer: null,
+    translator: null,
+    prompt: null
+  });
+  const [isDownloading, setIsDownloading] = useState({
+    summarizer: false,
+    translator: false,
+    prompt: false
   });
 
   const [isPageContextLoaded, setIsPageContextLoaded] = useState(false);
@@ -1247,7 +1257,6 @@ useEffect(() => {
   };
 
   const firebase = initializeApp(firebaseConfig);
-  // const analytics = getAnalytics(firebase);
   const gemini_ai = getAI(firebase, { backend: new GoogleAIBackend() });
   const gemini_model = getGenerativeModel(gemini_ai, { model: "gemini-2.5-flash", mode: InferenceMode.PREFER_IN_CLOUD });
 
@@ -1281,6 +1290,7 @@ useEffect(() => {
         support = { ...support, summarizer: true };
       } else {
         console.log('❌ Summarizer is not available. Returned:', status_summarizer);
+        setDownloadStatus(prev => ({ ...prev, summarizer: status_summarizer }));
       }
 
       if (status_translator === 'available') {
@@ -1288,6 +1298,7 @@ useEffect(() => {
         support = { ...support, translator: true };
       } else {
         console.log('❌ Translator is not available. Returned:', status_translator);
+        setDownloadStatus(prev => ({ ...prev, translator: status_translator }));
       }
 
       if (status_detect === 'available') {
@@ -1302,6 +1313,7 @@ useEffect(() => {
         support = { ...support, prompt: true };
       } else {
         console.log('❌ Language prompt is not available. Returned:', status_prompt);
+        setDownloadStatus(prev => ({ ...prev, prompt: status_prompt }));
       }
 
       if(status_chatbot === 'available'){
@@ -1316,6 +1328,72 @@ useEffect(() => {
 
     setApiSupport(support);
     return support; 
+  };
+
+  const handleDownloadModel = async (modelType) => {
+    setIsDownloading(prev => ({ ...prev, [modelType]: true }));
+    
+    try {
+      let model;
+      
+      if (modelType === 'summarizer') {
+        model = await Summarizer.create({
+          monitor(m) {
+            m.addEventListener('downloadprogress', (e) => {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              console.log(`Downloading summarizer: ${percent}%`);
+            });
+          }
+        });
+         model = await LanguageModel.create({
+          monitor(m) {
+            m.addEventListener('downloadprogress', (e) => {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              console.log(`Downloading language model: ${percent}%`);
+            });
+          }
+        });
+        model.destroy();
+      } else if (modelType === 'translator') {
+        model = await Translator.create({
+          sourceLanguage: 'en',
+          targetLanguage: 'zh',
+          monitor(m) {
+            m.addEventListener('downloadprogress', (e) => {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              console.log(`Downloading translator: ${percent}%`);
+            });
+          }
+        });
+        model = await LanguageModel.create({
+          monitor(m) {
+            m.addEventListener('downloadprogress', (e) => {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              console.log(`Downloading language model: ${percent}%`);
+            });
+          }
+        });
+        model.destroy();
+      } else if (modelType === 'prompt') {
+        model = await LanguageModel.create({
+          monitor(m) {
+            m.addEventListener('downloadprogress', (e) => {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              console.log(`Downloading language model: ${percent}%`);
+            });
+          }
+        });
+        model.destroy();
+      }
+      
+      await checkAPISupport();
+      showToast('✅ Model downloaded successfully!');
+    } catch (error) {
+      console.error('Download error:', error);
+      showToast('❌ Download failed. Please try again.');
+    } finally {
+      setIsDownloading(prev => ({ ...prev, [modelType]: false }));
+    }
   };
 
   useEffect(() => {
@@ -2760,7 +2838,69 @@ useEffect(() => {
 
   const chatbotText = async (text, isNewConversation = false) => {
     if (!apiSupport.chatbot) {
-      throw new Error('❌ Chatbot API not supported');
+      const downloadingMessage = { 
+        type: 'bot', 
+        content: '📥 Downloading chat model... This may take a moment.', 
+        source: 'system',
+        timestamp: Date.now() 
+      };
+      setChatHistory(prev => [...prev, downloadingMessage]);
+      
+      try {
+        setIsDownloading(prev => ({ ...prev, chatbot: true }));
+        
+        const model = await LanguageModel.create({
+          monitor(m) {
+            m.addEventListener('downloadprogress', (e) => {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              console.log(`Downloading chatbot model: ${percent}%`);
+              
+              setChatHistory(prev => 
+                prev.map(msg => 
+                  msg.content.includes('Downloading chat model') 
+                    ? { ...msg, content: `📥 Downloading chat model... ${percent}%` }
+                    : msg
+                )
+              );
+            });
+          }
+        });
+        
+        model.destroy();
+        
+        setApiSupport(prev => ({ ...prev, chatbot: true }));
+        setIsDownloading(prev => ({ ...prev, chatbot: false }));
+        
+        setChatHistory(prev => prev.filter(msg => !msg.content.includes('Downloading chat model')));
+        
+        const successMessage = { 
+          type: 'bot', 
+          content: '✅ Chat model ready! Processing your message...', 
+          source: 'system',
+          timestamp: Date.now() 
+        };
+        setChatHistory(prev => [...prev, successMessage]);
+        
+        setTimeout(() => {
+          setChatHistory(prev => prev.filter(msg => !msg.content.includes('Chat model ready')));
+        }, 1500);
+        
+      } catch (error) {
+        console.error('Failed to download chatbot model:', error);
+        setIsDownloading(prev => ({ ...prev, chatbot: false }));
+        
+        setChatHistory(prev => prev.filter(msg => !msg.content.includes('Downloading chat model')));
+        
+        const errorMessage = { 
+          type: 'bot', 
+          content: '❌ Failed to download chat model. Please check your internet connection and try again.', 
+          source: 'system',
+          timestamp: Date.now() 
+        };
+        setChatHistory(prev => [...prev, errorMessage]);
+        
+        throw new Error('Chatbot model download failed');
+      }
     }
 
     if (isNewConversation) {
@@ -3974,28 +4114,102 @@ useEffect(() => {
 
         {/* Action Button */}
         {activeTab !== 'chat' && (
-          <button
-            onClick={() => {
-              setUserCancelledProcessing(false);
-              userCancelledRef.current = false;
-              processText(activeTab, selectedText, { isManualClick: true });
-            }}
-            disabled={isLoading || !selectedText.trim()}
-            className={`w-full mt-4 py-3 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none ${
-              activeTab === 'summarize' ? 'bg-blue-500 hover:bg-blue-600' :
-              activeTab === 'translate' ? 'bg-green-500 hover:bg-green-600' :
-              'bg-amber-500 hover:bg-amber-600'
-            } text-white ${isLoading || !selectedText.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            {isLoading ? (
-              <div className="flex items-center justify-center space-x-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span>{result.includes('Processing section') ? result.replace('📄 ', '').replace('🌐 ', '').replace('💡 ', '') : 'Processing...'}</span>
+          <>
+            {/* Model Not Available Warning */}
+            {((activeTab === 'summarize' && !apiSupport.summarizer) ||
+              (activeTab === 'translate' && !apiSupport.translator) ||
+              (activeTab === 'explain' && !apiSupport.prompt)) && (
+              <div className="mt-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <div className="flex items-center space-x-3 flex-1">
+                    <div className="flex-shrink-0">
+                      <CircleAlert className="w-5 h-5 text-amber-600 dark:text-amber-400 animate-pulse" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                        {activeTab === 'summarize' && 'Summarizer model not available'}
+                        {activeTab === 'translate' && 'Translator model not available'}
+                        {activeTab === 'explain' && 'Language model not available'}
+                      </p>
+                      <p className="text-xs text-amber-600 dark:text-amber-300 mt-0.5">
+                        {downloadStatus[activeTab === 'summarize' ? 'summarizer' : 
+                                      activeTab === 'translate' ? 'translator' : 'prompt'] === 'after-download'
+                          ? 'Download required to use this feature'
+                          : 'Model needs to be downloaded first'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => handleDownloadModel(
+                      activeTab === 'summarize' ? 'summarizer' : 
+                      activeTab === 'translate' ? 'translator' : 'prompt'
+                    )}
+                    disabled={isDownloading[activeTab === 'summarize' ? 'summarizer' : 
+                                            activeTab === 'translate' ? 'translator' : 'prompt']}
+                    className="flex-shrink-0 ml-3 p-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 text-white rounded-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    {isDownloading[activeTab === 'summarize' ? 'summarizer' : 
+                                  activeTab === 'translate' ? 'translator' : 'prompt'] ? (
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <svg 
+                        className="w-5 h-5" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round" 
+                          strokeWidth={2} 
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" 
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
-            ) : (
-              `${tabs.find(t => t.id === activeTab)?.label} Text`
             )}
-          </button>
+
+            {/* Process Button */}
+            <button
+              onClick={() => {
+                setUserCancelledProcessing(false);
+                userCancelledRef.current = false;
+                processText(activeTab, selectedText, { isManualClick: true });
+              }}
+              disabled={
+                isLoading || 
+                !selectedText.trim() || 
+                (activeTab === 'summarize' && !apiSupport.summarizer) ||
+                (activeTab === 'translate' && !apiSupport.translator) ||
+                (activeTab === 'explain' && !apiSupport.prompt)
+              }
+              className={`w-full mt-4 py-3 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none ${
+                activeTab === 'summarize' ? 'bg-blue-500 hover:bg-blue-600' :
+                activeTab === 'translate' ? 'bg-green-500 hover:bg-green-600' :
+                'bg-amber-500 hover:bg-amber-600'
+              } text-white ${
+                isLoading || 
+                !selectedText.trim() || 
+                (activeTab === 'summarize' && !apiSupport.summarizer) ||
+                (activeTab === 'translate' && !apiSupport.translator) ||
+                (activeTab === 'explain' && !apiSupport.prompt)
+                  ? 'opacity-50 cursor-not-allowed' 
+                  : ''
+              }`}
+            >
+              {isLoading ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>{result.includes('Processing section') ? result.replace('📄 ', '').replace('🌍 ', '').replace('💡 ', '') : 'Processing...'}</span>
+                </div>
+              ) : (
+                `${tabs.find(t => t.id === activeTab)?.label} Text`
+              )}
+            </button>
+          </>
         )}
 
         {/* Results with Animation */}
@@ -4835,6 +5049,21 @@ useEffect(() => {
           100% {
             background-position: 200% 50%;
           }
+        }
+
+        @keyframes slide-in-from-top-2 {
+          from { 
+            opacity: 0;
+            transform: translateY(-8px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .slide-in-from-top-2 {
+          animation-name: slide-in-from-top-2;
         }
       `}</style>
     </div>
