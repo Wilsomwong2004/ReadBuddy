@@ -6,6 +6,7 @@
 
 **ReadBuddy - AI Powered Reading Assistant**
 
+[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-yellow?logo=googlechrome)](https://chromewebstore.google.com/detail/readbuddy-ai-reading-assi/pkgomicahmbagpmhkablpcanklejnnlk)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Wilsomwong2004/readbuddy/pulls)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
