@@ -63,7 +63,7 @@ ReadBuddy is an intelligent reading assistant extension based on **Chrome's buil
 
 ### Installation Steps
 
-
+### Method 1: Manual Install
 #### 1\. Clone repository
 ```bash
 git clone https://github.com/yourusername/readbuddy.git
@@ -81,6 +81,11 @@ npm run build
 ```
 
 ##### 4\. Load extension in Chrome
+
+
+### Method 2: Chrome Web Store
+#### 1\. Go to Chrome Web Store or open link https://chromewebstore.google.com/detail/readbuddy-ai-reading-assi/pkgomicahmbagpmhkablpcanklejnnlk
+#### 2\. Click Add to Chrome
 
 ##### Chrome Loading Steps
 
